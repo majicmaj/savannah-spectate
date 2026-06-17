@@ -10,7 +10,7 @@ import { VOXEL_WATER_LEVEL, RENDER_RADIUS_M } from "../world/constants.js";
 
 const SPACING = 4.5; // m between candidate tufts
 const CAP = 14000; // instance budget (1 draw call)
-const TEX = "/textures/GRASS_sm.png";
+const TEX = "/textures/GRASS_TRANSPARENT.png"; // same tuft texture as grass_render.gd
 
 function hash2(x: number, z: number): number {
   let h = (Math.imul(x, 374761393) + Math.imul(z, 668265263)) >>> 0;
