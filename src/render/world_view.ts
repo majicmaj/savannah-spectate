@@ -130,10 +130,11 @@ export class WorldView {
     for (const [id, e] of this.ents) if (!e.seen) this.ents.delete(id);
   }
 
-  update(dt: number): void {
+  update(dt: number, center?: THREE.Vector3, radius?: number): void {
     const k = 1 - Math.exp(-12 * dt);
     const counts = new Array(SPECIES_COUNT).fill(0);
     let corpseCount = 0;
+    const r2 = radius ? radius * radius : Infinity;
 
     for (const e of this.ents.values()) {
       e.x += (e.tx - e.x) * k;
@@ -142,6 +143,10 @@ export class WorldView {
       e.yaw = shortestAngleLerp(e.yaw, e.tyaw, k);
 
       if (this.suppressed.has(e.id)) continue; // a real GLB model is drawing this one
+      if (center) {
+        const dx = e.x - center.x, dz = e.z - center.z;
+        if (dx * dx + dz * dz > r2) continue; // render-distance cull
+      }
 
       this.dummy.position.set(e.x, e.y, e.z);
       this.dummy.rotation.set(0, e.yaw, 0);

@@ -14,6 +14,34 @@ export const VOXEL_WORLD_W = 1024; // constants.gd:5683
 
 export const SNAPSHOT_REFRESH_INTERVAL = 5; // constants.gd:3771
 
+// --- voxel terrain (constants.gd / voxel_gen.gd / voxel_mesher.gd) ---
+export const VOXEL_CHUNK = 32; // VOXEL_CHUNK_X/Z
+export const VOXEL_WATER_LEVEL = 26;
+export const VOXEL_HEIGHT_BASE = 27;
+export const VOXEL_WATER_SURFACE_OFFSET = 0.95;
+export const VOXEL_DRY_FALLOFF = 96; // m to full-dry grass tint
+export const WATER_DIST_MAX = 64; // BFS cap (VoxelGen._WATER_DIST_MAX)
+
+// terrain top/side palette (voxel_mesher.gd) — RGB 0..1
+export const COL_GRASS_GREEN: [number, number, number] = [0.6, 0.55, 0.26];
+export const COL_GRASS_DRY: [number, number, number] = [0.78, 0.72, 0.36];
+export const COL_SAND: [number, number, number] = [0.78, 0.72, 0.48];
+export const COL_MUD: [number, number, number] = [0.32, 0.26, 0.18];
+export const COL_DIRT: [number, number, number] = [0.46, 0.32, 0.2];
+
+// --- render distance (spectate-only perf knob) ---
+export const RENDER_RADIUS_M = 280; // hard cull radius around the camera target
+export const CHUNK_RENDER_RADIUS = 9; // chunks each way (9*32 ≈ 288 m)
+
+// --- trees (tree_gen.gd / net.gd) ---
+export const TREE_SEED = 0xacac1a;
+export const TREE_COUNT = 30;
+export const TREE_MODEL = "models/acaia_tree.glb";
+
+// --- grass (grass_gen.gd) — GRASS_SEED declared above ---
+export const FOOD_CAP = 40000;
+export const GRASS_MIN_SPACING = 3.0;
+
 // Spectator gateway listens here (separate from the game's WebSocketMultiplayerPeer).
 export const SPECTATE_GATEWAY_PORT = 8091;
 

@@ -3,7 +3,13 @@ import { GatewayClient } from "./net/gateway_client.js";
 import { WorldView } from "./render/world_view.js";
 import { AnimalModels } from "./render/animal_models.js";
 import { SpectateCamera } from "./render/spectate_camera.js";
-import { WORLD_SIZE, SPECIES_LABELS, SPECTATE_GATEWAY_PORT } from "./world/constants.js";
+import { Terrain } from "./render/terrain.js";
+import { Grass } from "./render/grass.js";
+import { Trees } from "./render/trees.js";
+import { Heightmap } from "./world/heightmap.js";
+import {
+  WORLD_SIZE, SPECIES_LABELS, SPECTATE_GATEWAY_PORT, RENDER_RADIUS_M, VOXEL_HEIGHT_BASE,
+} from "./world/constants.js";
 
 function gatewayUrl(): string {
   const m = location.hash.match(/ws=([^&]+)/);
@@ -23,10 +29,10 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x8fbcd4);
-scene.fog = new THREE.Fog(0x8fbcd4, 140, 460);
+scene.fog = new THREE.Fog(0x8fbcd4, RENDER_RADIUS_M * 0.55, RENDER_RADIUS_M);
 
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
-camera.position.set(0, 30, 60);
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, RENDER_RADIUS_M + 120);
+camera.position.set(0, 60, 90);
 
 const hemi = new THREE.HemisphereLight(0xcfe8ff, 0x6a7b4a, 0.85);
 scene.add(hemi);
@@ -38,39 +44,51 @@ sun.shadow.camera.left = -120;
 sun.shadow.camera.right = 120;
 sun.shadow.camera.top = 120;
 sun.shadow.camera.bottom = -120;
-sun.shadow.camera.far = 400;
+sun.shadow.camera.far = 420;
 scene.add(sun);
 const sunTarget = new THREE.Object3D();
 scene.add(sunTarget);
 sun.target = sunTarget;
 
-// ground placeholder (replaced by real voxel terrain in the next milestone)
+// placeholder ground shown until the real heightmap arrives
 const ground = new THREE.Mesh(
   new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE),
   new THREE.MeshToonMaterial({ color: 0x6f8a4a }),
 );
 ground.rotation.x = -Math.PI / 2;
-ground.position.y = 27; // ~VOXEL_HEIGHT_BASE so animals (server py) sit near it
+ground.position.y = VOXEL_HEIGHT_BASE;
 ground.receiveShadow = true;
 scene.add(ground);
-const grid = new THREE.GridHelper(WORLD_SIZE, 64, 0x55703f, 0x55703f);
-grid.position.y = 27.02;
-(grid.material as THREE.Material).opacity = 0.2;
-(grid.material as THREE.Material).transparent = true;
-scene.add(grid);
 
 const view = new WorldView();
 scene.add(view.group);
 const models = new AnimalModels();
 scene.add(models.group);
+const terrain = new Terrain();
+scene.add(terrain.group);
+const grass = new Grass();
+scene.add(grass.mesh);
+const trees = new Trees();
+scene.add(trees.group);
+const heightmap = new Heightmap();
 const spectate = new SpectateCamera(camera);
 
 let modelStatus = "loading models…";
-models.load((d, t) => (modelStatus = `loading models ${d}/${t}`)).then(() => (modelStatus = "models ready"));
+models.load((d, t) => (modelStatus = `models ${d}/${t}`)).then(() => (modelStatus = "models ready"));
+let treesLoaded = false;
+trees.load().then(() => (treesLoaded = true)).catch((e) => console.error("[trees] load failed", e));
 
 let status = "connecting";
+let terrainStatus = "no heightmap";
 const client = new GatewayClient(gatewayUrl());
 client.onStatus = (s) => (status = s);
+client.onHeightmap = (payload) => {
+  heightmap.ingest(payload);
+  terrain.setHeightmap(heightmap);
+  grass.setHeightmap(heightmap);
+  terrainStatus = `terrain ${heightmap.W}×${heightmap.H}`;
+  ground.visible = false; // real terrain takes over
+};
 client.onSnapshot = (snap) => {
   view.applySnapshot(snap, performance.now());
   spectate.ensureTarget(view);
@@ -98,13 +116,15 @@ function frame(now: number) {
   const tid = spectate.targetId;
   const targetPos = tid != null ? view.getRenderPos(tid) : null;
 
-  // models first (uses last-frame positions), then capsules skip the modeled ids
+  if (treesLoaded && heightmap.loaded) trees.place(heightmap);
+
   models.update(dt, targetPos, view.entities());
   view.setSuppressed(models.suppressed);
-  view.update(dt);
+  view.update(dt, targetPos ?? undefined, RENDER_RADIUS_M);
+  terrain.update(dt, targetPos);
+  grass.update(targetPos);
   spectate.update(dt, view);
 
-  // keep the shadow frustum near the action
   if (targetPos) {
     sun.position.set(targetPos.x + 80, targetPos.y + 160, targetPos.z + 60);
     sunTarget.position.copy(targetPos);
@@ -121,6 +141,7 @@ function frame(now: number) {
   const fresh = client.lastSnapshotAt && now - client.lastSnapshotAt < 1000;
   hud.textContent =
     `${status}${fresh ? "" : " (stale)"}  ${(client.bytesPerSec / 1024).toFixed(1)} KB/s  ${modelStatus}\n` +
+    `${terrainStatus}  chunks ${terrain.chunkCount()}  grass ${grass.count()}\n` +
     `entities ${view.count()}   models ${models.activeCount()}   FPS ${fps.toFixed(0)}\n` +
     `target ${targetLabel}`;
 
