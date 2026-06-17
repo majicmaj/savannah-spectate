@@ -7,6 +7,7 @@ import { Terrain } from "./render/terrain.js";
 import { Grass } from "./render/grass.js";
 import { Trees } from "./render/trees.js";
 import { Heightmap } from "./world/heightmap.js";
+import { computeDayNight, CYCLE_SECONDS } from "./world/daynight.js";
 import {
   WORLD_SIZE, SPECIES_LABELS, SPECTATE_GATEWAY_PORT, RENDER_RADIUS_M, VOXEL_HEIGHT_BASE,
 } from "./world/constants.js";
@@ -49,6 +50,12 @@ scene.add(sun);
 const sunTarget = new THREE.Object3D();
 scene.add(sunTarget);
 sun.target = sunTarget;
+// moon — second directional light, active at night (no shadow, for perf)
+const moon = new THREE.DirectionalLight(0x8899ff, 0);
+scene.add(moon);
+const moonTarget = new THREE.Object3D();
+scene.add(moonTarget);
+moon.target = moonTarget;
 
 // placeholder ground shown until the real heightmap arrives
 const ground = new THREE.Mesh(
@@ -80,8 +87,11 @@ trees.load().then(() => (treesLoaded = true)).catch((e) => console.error("[trees
 
 let status = "connecting";
 let terrainStatus = "no heightmap";
+let timeOfDay = CYCLE_SECONDS * 0.35; // default morning until first server time
+let timeRecvAt = performance.now();
 const client = new GatewayClient(gatewayUrl());
 client.onStatus = (s) => (status = s);
+client.onTime = (t) => { timeOfDay = t; timeRecvAt = performance.now(); };
 client.onHeightmap = (payload) => {
   heightmap.ingest(payload);
   terrain.setHeightmap(heightmap);
@@ -134,10 +144,26 @@ function frame(now: number) {
   grass.update(targetPos);
   spectate.update(dt, view);
 
-  if (targetPos) {
-    sun.position.set(targetPos.x + 80, targetPos.y + 160, targetPos.z + 60);
-    sunTarget.position.copy(targetPos);
-  }
+  // day/night — extrapolate time-of-day, drive sun/moon/sky/fog/ambient
+  const tNorm = ((((timeOfDay + (now - timeRecvAt) / 1000) % CYCLE_SECONDS) / CYCLE_SECONDS) + 1) % 1;
+  const dn = computeDayNight(tNorm);
+  const anchor = targetPos ?? new THREE.Vector3(0, VOXEL_HEIGHT_BASE, 0);
+  sun.color.setRGB(dn.sunColor[0], dn.sunColor[1], dn.sunColor[2]);
+  sun.intensity = dn.sunEnergy * 3.0;
+  sun.visible = dn.sunDir.y > 0.02;
+  sun.castShadow = dn.sunDir.y > 0.08;
+  sun.position.set(anchor.x + dn.sunDir.x * 220, anchor.y + dn.sunDir.y * 220 + 10, anchor.z + dn.sunDir.z * 220);
+  sunTarget.position.copy(anchor);
+  moon.color.setRGB(dn.moonColor[0], dn.moonColor[1], dn.moonColor[2]);
+  moon.intensity = dn.moonEnergy * 2.2;
+  moon.visible = dn.moonDir.y > 0.02;
+  moon.position.set(anchor.x + dn.moonDir.x * 220, anchor.y + dn.moonDir.y * 220 + 10, anchor.z + dn.moonDir.z * 220);
+  moonTarget.position.copy(anchor);
+  hemi.color.setRGB(dn.ambientColor[0], dn.ambientColor[1], dn.ambientColor[2]);
+  hemi.groundColor.setRGB(dn.ambientColor[0] * 0.4, dn.ambientColor[1] * 0.4, dn.ambientColor[2] * 0.4);
+  hemi.intensity = dn.ambientEnergy * 3.0 + 0.12;
+  (scene.background as THREE.Color).setRGB(dn.skyColor[0], dn.skyColor[1], dn.skyColor[2]);
+  scene.fog!.color.setRGB(dn.fogColor[0], dn.fogColor[1], dn.fogColor[2]);
 
   renderer.render(scene, camera);
 

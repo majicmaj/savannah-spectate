@@ -8,10 +8,12 @@ import { decodeSnapshot, type DecodedSnapshot } from "./snapshot_codec.js";
 const FRAME_SNAPSHOT = 1;
 const FRAME_WORLD_INIT = 2;
 const FRAME_WORLD_HEIGHTS = 3;
+const FRAME_TIME = 4;
 
 export type SnapshotListener = (snap: DecodedSnapshot) => void;
 export type WorldInitListener = (payload: Uint8Array) => void;
 export type HeightmapListener = (payload: Uint8Array) => void;
+export type TimeListener = (timeOfDay: number) => void;
 export type StatusListener = (status: "connecting" | "open" | "closed") => void;
 
 export class GatewayClient {
@@ -23,6 +25,7 @@ export class GatewayClient {
   onSnapshot: SnapshotListener | null = null;
   onWorldInit: WorldInitListener | null = null;
   onHeightmap: HeightmapListener | null = null;
+  onTime: TimeListener | null = null;
   onStatus: StatusListener | null = null;
 
   // diagnostics
@@ -81,6 +84,11 @@ export class GatewayClient {
       this.onWorldInit?.(payload);
     } else if (type === FRAME_WORLD_HEIGHTS) {
       this.onHeightmap?.(payload);
+    } else if (type === FRAME_TIME) {
+      if (payload.byteLength >= 4) {
+        const t = new DataView(payload.buffer, payload.byteOffset, payload.byteLength).getFloat32(0, true);
+        this.onTime?.(t);
+      }
     }
   }
 
