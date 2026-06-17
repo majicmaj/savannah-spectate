@@ -41,8 +41,10 @@ export const TREE_MODEL = "models/acaia_tree.glb";
 // --- grass (grass_gen.gd) — GRASS_SEED declared above ---
 export const FOOD_CAP = 40000;
 export const GRASS_MIN_SPACING = 3.0;
-export const GRASS_FULL_HEIGHT_M = 3.0; // GRASS_FULL_HEIGHT_M — tuft height at food=1
-export const GRASS_WIDTH_M = 1.6; // build_crossed_mesh quad width
+export const GRASS_FULL_HEIGHT_M = 3.0; // tuft height at food=1
+// The game's crossed-quad mesh is 1.6 m wide × 0.8 m tall (2:1) and uniform-scales
+// to ~3 m tall → ~6 m wide. Match that aspect so tufts read as wide bushy clumps.
+export const GRASS_WIDTH_M = 6.0;
 
 // --- snapshot interpolation ---
 // Render at now - INTERP_DELAY so there's always a newer sample to interpolate

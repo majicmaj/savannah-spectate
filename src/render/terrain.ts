@@ -127,9 +127,10 @@ export class Terrain {
         const topMat = underwater ? 2 : 0;
         const sideMat = underwater ? 2 : 1;
 
-        // top quad (y up), rotated UV
+        // top quad — wound CCW from above so the normal points +Y (else the
+        // FrontSide material backface-culls it and tops vanish)
         face(
-          [[x, top, z], [x + 1, top, z], [x + 1, top, z + 1], [x, top, z + 1]],
+          [[x, top, z], [x, top, z + 1], [x + 1, top, z + 1], [x + 1, top, z]],
           [0, 1, 0], TOPUV[hashRot(x, z)], topMat,
         );
 

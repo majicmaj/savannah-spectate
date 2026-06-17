@@ -86,6 +86,7 @@ client.onHeightmap = (payload) => {
   heightmap.ingest(payload);
   terrain.setHeightmap(heightmap);
   grass.setHeightmap(heightmap);
+  view.setHeightmap(heightmap); // ground corpses on the terrain
   terrainStatus = `terrain ${heightmap.W}×${heightmap.H}`;
   ground.visible = false; // real terrain takes over
 };
@@ -108,6 +109,7 @@ window.addEventListener("resize", () => {
 });
 
 let last = performance.now();
+let lastCenterSent = 0;
 let fps = 0, fpsAccum = 0, fpsFrames = 0;
 function frame(now: number) {
   const dt = Math.min(0.1, (now - last) / 1000);
@@ -115,6 +117,13 @@ function frame(now: number) {
 
   const tid = spectate.targetId;
   const targetPos = tid != null ? view.getRenderPos(tid) : null;
+
+  // anchor server AI/physics LOD at the spectate target so nearby bots tick at
+  // full rate (smooth) instead of the ~2 Hz far-bot step. ~10 Hz uplink.
+  if (targetPos && now - lastCenterSent > 100) {
+    client.sendCenter(targetPos.x, targetPos.z);
+    lastCenterSent = now;
+  }
 
   if (treesLoaded && heightmap.loaded) trees.place(heightmap);
 

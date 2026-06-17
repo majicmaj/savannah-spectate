@@ -11,6 +11,7 @@
 import * as THREE from "three";
 import { ANIMAL_COLORS, P, INTERP_DELAY_MS } from "../world/constants.js";
 import type { DecodedSnapshot } from "../net/snapshot_codec.js";
+import type { Heightmap } from "../world/heightmap.js";
 
 const SPECIES_COUNT = 8;
 const PER_SPECIES_CAP = 1024;
@@ -50,6 +51,11 @@ export class WorldView {
   private ents = new Map<number, Ent>();
   private dummy = new THREE.Object3D();
   private suppressed = new Set<number>();
+  private hm: Heightmap | null = null;
+
+  setHeightmap(hm: Heightmap): void {
+    this.hm = hm;
+  }
 
   constructor() {
     for (let a = 0; a < SPECIES_COUNT; a++) {
@@ -97,7 +103,8 @@ export class WorldView {
     for (const [cid, c] of snap.c) {
       const id = 0x40000000 | cid;
       const [x, z, size, meat, cyaw] = c;
-      this.pushSample(id, nowMs, x, 0, z, cyaw, -1, size, {
+      const cy = this.hm?.loaded ? this.hm.surfaceAt(x, z) : 0; // ground the corpse
+      this.pushSample(id, nowMs, x, cy, z, cyaw, -1, size, {
         aiState: 0, sleeping: false, flightMode: 0, isFemale: false, isCorpse: true, meat,
       });
     }

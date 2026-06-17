@@ -92,6 +92,20 @@ export class GatewayClient {
     }, 1000);
   }
 
+  /** Uplink the spectate-target position so the server anchors AI/physics LOD
+   * there → bots near the camera tick at full rate (smooth) instead of the
+   * ~2 Hz far-bot step. Frame: [type=1 u8][x f32][z f32] little-endian. */
+  sendCenter(x: number, z: number): void {
+    const ws = this.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const buf = new ArrayBuffer(9);
+    const dv = new DataView(buf);
+    dv.setUint8(0, 1);
+    dv.setFloat32(1, x, true);
+    dv.setFloat32(5, z, true);
+    ws.send(buf);
+  }
+
   close(): void {
     this.closedByUser = true;
     if (this.reconnectTimer != null) {
