@@ -6,7 +6,7 @@
 
 import * as THREE from "three";
 import { Heightmap } from "../world/heightmap.js";
-import { VOXEL_WATER_LEVEL, RENDER_RADIUS_M } from "../world/constants.js";
+import { VOXEL_WATER_LEVEL, RENDER_RADIUS_M, GRASS_FULL_HEIGHT_M, GRASS_WIDTH_M } from "../world/constants.js";
 
 const SPACING = 4.5; // m between candidate tufts
 const CAP = 14000; // instance budget (1 draw call)
@@ -26,8 +26,8 @@ export class Grass {
   private lastCellZ = NaN;
 
   constructor() {
-    // two crossed quads, base at y=0, ~1.3 m tall
-    const w = 0.7, h = 1.3;
+    // two crossed quads, base at y=0 — game tuft dims (1.6 m wide × 3 m tall)
+    const w = GRASS_WIDTH_M / 2, h = GRASS_FULL_HEIGHT_M;
     const g = new THREE.BufferGeometry();
     const pos = [
       -w, 0, 0, w, 0, 0, w, h, 0, -w, h, 0, // quad A (XY)
@@ -85,7 +85,8 @@ export class Grass {
         const y = this.hm.surfaceAt(wx, wz);
         this.dummy.position.set(wx, y, wz);
         this.dummy.rotation.set(0, hash2(cx + 3, cz + 5) * Math.PI, 0);
-        const s = 0.7 + hash2(cx + 1, cz + 2) * 0.8;
+        // scale ~full-height (food≈1) with mild per-tuft variation, like the game
+        const s = 0.85 + hash2(cx + 1, cz + 2) * 0.3;
         this.dummy.scale.set(s, s, s);
         this.dummy.updateMatrix();
         this.mesh.setMatrixAt(n, this.dummy.matrix);

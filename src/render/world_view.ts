@@ -1,22 +1,26 @@
-// Renders decoded snapshot entities. Two layers:
+// Renders decoded snapshot entities with proper snapshot interpolation: each
+// entity keeps a small buffer of timestamped samples and is rendered at
+// now - INTERP_DELAY_MS, linearly interpolating position between the two
+// bracketing snapshots and shortest-angle-interpolating yaw. This yields
+// continuous, velocity-preserving motion instead of ease-toward-stepped-target
+// stutter. Two render layers:
 //  - far/most entities: per-species InstancedMesh capsules (~1 draw call/species)
-//  - near the spectate target: real GLB models take over (see animal_models.ts);
-//    those ids are "suppressed" here so they don't double-render as capsules.
-// Coord map: Godot & Three are right-handed Y-up, -Z forward → (px,py,pz)->(x,y,z),
-// yaw->rotation.y directly.
+//  - near the spectate target: real GLB models take over (animal_models.ts); those
+//    ids are "suppressed" here so they don't double-render as capsules.
 
 import * as THREE from "three";
-import { ANIMAL_COLORS, P } from "../world/constants.js";
+import { ANIMAL_COLORS, P, INTERP_DELAY_MS } from "../world/constants.js";
 import type { DecodedSnapshot } from "../net/snapshot_codec.js";
 
 const SPECIES_COUNT = 8;
 const PER_SPECIES_CAP = 1024;
+const MAX_SAMPLES = 8;
 
 export interface RenderEnt {
   id: number;
   animal: number;
   size: number;
-  x: number; y: number; z: number; yaw: number;
+  x: number; y: number; z: number; yaw: number; // interpolated render transform
   speed: number;
   aiState: number;
   sleeping: boolean;
@@ -26,8 +30,10 @@ export interface RenderEnt {
   meat: number;
 }
 
+interface Sample { t: number; x: number; y: number; z: number; yaw: number; }
+
 interface Ent extends RenderEnt {
-  tx: number; ty: number; tz: number; tyaw: number;
+  buf: Sample[];
   seen: boolean;
 }
 
@@ -43,8 +49,7 @@ export class WorldView {
   private corpseMesh: THREE.InstancedMesh;
   private ents = new Map<number, Ent>();
   private dummy = new THREE.Object3D();
-  private suppressed = new Set<number>(); // ids rendered by real GLB models instead
-  private lastSnapAt = 0;
+  private suppressed = new Set<number>();
 
   constructor() {
     for (let a = 0; a < SPECIES_COUNT; a++) {
@@ -76,81 +81,74 @@ export class WorldView {
   }
 
   applySnapshot(snap: DecodedSnapshot, nowMs: number): void {
-    const dt = this.lastSnapAt ? Math.max(0.001, (nowMs - this.lastSnapAt) / 1000) : 0.05;
-    this.lastSnapAt = nowMs;
-
     for (const e of this.ents.values()) e.seen = false;
 
     for (const [id, arr] of snap.p) {
-      const x = arr[P.PX] as number;
-      const y = arr[P.PY] as number;
-      const z = arr[P.PZ] as number;
-      const yaw = arr[P.YAW] as number;
-      let e = this.ents.get(id);
-      if (!e) {
-        e = {
-          id, animal: (arr[P.ANIMAL] as number) & 7, size: arr[P.SIZE] as number,
-          x, y, z, yaw, speed: 0,
-          aiState: arr[P.AI_STATE] as number, sleeping: !!arr[P.SLEEPING],
-          flightMode: arr[P.FLIGHT_MODE] as number, isFemale: !!arr[P.IS_FEMALE],
-          isCorpse: false, meat: 1,
-          tx: x, ty: y, tz: z, tyaw: yaw, seen: true,
-        };
-        this.ents.set(id, e);
-      } else {
-        const dx = x - e.tx, dz = z - e.tz;
-        e.speed = Math.sqrt(dx * dx + dz * dz) / dt;
-        e.animal = (arr[P.ANIMAL] as number) & 7;
-        e.size = arr[P.SIZE] as number;
-        e.aiState = arr[P.AI_STATE] as number;
-        e.sleeping = !!arr[P.SLEEPING];
-        e.flightMode = arr[P.FLIGHT_MODE] as number;
-        e.isFemale = !!arr[P.IS_FEMALE];
-        e.tx = x; e.ty = y; e.tz = z; e.tyaw = yaw; e.seen = true;
-      }
+      const x = arr[P.PX] as number, y = arr[P.PY] as number, z = arr[P.PZ] as number, yaw = arr[P.YAW] as number;
+      this.pushSample(id, nowMs, x, y, z, yaw, (arr[P.ANIMAL] as number) & 7, arr[P.SIZE] as number, {
+        aiState: arr[P.AI_STATE] as number,
+        sleeping: !!arr[P.SLEEPING],
+        flightMode: arr[P.FLIGHT_MODE] as number,
+        isFemale: !!arr[P.IS_FEMALE],
+        isCorpse: false,
+        meat: 1,
+      });
     }
-
     for (const [cid, c] of snap.c) {
       const id = 0x40000000 | cid;
       const [x, z, size, meat, cyaw] = c;
-      let e = this.ents.get(id);
-      if (!e) {
-        e = {
-          id, animal: -1, size, x, y: 0, z, yaw: cyaw, speed: 0,
-          aiState: 0, sleeping: false, flightMode: 0, isFemale: false,
-          isCorpse: true, meat,
-          tx: x, ty: 0, tz: z, tyaw: cyaw, seen: true,
-        };
-        this.ents.set(id, e);
-      } else {
-        e.size = size; e.tx = x; e.tz = z; e.tyaw = cyaw; e.meat = meat; e.seen = true;
-      }
+      this.pushSample(id, nowMs, x, 0, z, cyaw, -1, size, {
+        aiState: 0, sleeping: false, flightMode: 0, isFemale: false, isCorpse: true, meat,
+      });
     }
 
     for (const [id, e] of this.ents) if (!e.seen) this.ents.delete(id);
   }
 
-  update(dt: number, center?: THREE.Vector3, radius?: number): void {
-    const k = 1 - Math.exp(-12 * dt);
+  private pushSample(
+    id: number, t: number, x: number, y: number, z: number, yaw: number,
+    animal: number, size: number,
+    meta: { aiState: number; sleeping: boolean; flightMode: number; isFemale: boolean; isCorpse: boolean; meat: number },
+  ): void {
+    let e = this.ents.get(id);
+    if (!e) {
+      e = {
+        id, animal, size, x, y, z, yaw, speed: 0,
+        ...meta, buf: [{ t, x, y, z, yaw }], seen: true,
+      };
+      this.ents.set(id, e);
+      return;
+    }
+    e.animal = animal; e.size = size;
+    e.aiState = meta.aiState; e.sleeping = meta.sleeping; e.flightMode = meta.flightMode;
+    e.isFemale = meta.isFemale; e.isCorpse = meta.isCorpse; e.meat = meta.meat;
+    e.seen = true;
+    const prev = e.buf[e.buf.length - 1];
+    const dt = Math.max(0.001, (t - prev.t) / 1000);
+    const dx = x - prev.x, dz = z - prev.z;
+    e.speed = Math.sqrt(dx * dx + dz * dz) / dt;
+    e.buf.push({ t, x, y, z, yaw });
+    if (e.buf.length > MAX_SAMPLES) e.buf.shift();
+  }
+
+  /** Interpolate every entity's render transform to renderTime = now - delay. */
+  update(now: number, center?: THREE.Vector3, radius?: number): void {
+    const renderT = now - INTERP_DELAY_MS;
     const counts = new Array(SPECIES_COUNT).fill(0);
     let corpseCount = 0;
     const r2 = radius ? radius * radius : Infinity;
 
     for (const e of this.ents.values()) {
-      e.x += (e.tx - e.x) * k;
-      e.y += (e.ty - e.y) * k;
-      e.z += (e.tz - e.z) * k;
-      e.yaw = shortestAngleLerp(e.yaw, e.tyaw, k);
+      this.sample(e, renderT);
 
-      if (this.suppressed.has(e.id)) continue; // a real GLB model is drawing this one
+      if (this.suppressed.has(e.id)) continue;
       if (center) {
         const dx = e.x - center.x, dz = e.z - center.z;
-        if (dx * dx + dz * dz > r2) continue; // render-distance cull
+        if (dx * dx + dz * dz > r2) continue;
       }
 
       this.dummy.position.set(e.x, e.y, e.z);
       this.dummy.rotation.set(0, e.yaw, 0);
-
       if (e.isCorpse) {
         const s = Math.max(0.3, e.size);
         this.dummy.scale.set(s, s * 0.5, s);
@@ -173,6 +171,37 @@ export class WorldView {
     this.corpseMesh.instanceMatrix.needsUpdate = true;
   }
 
+  // Write e.{x,y,z,yaw} from the sample buffer at absolute time `t`.
+  private sample(e: Ent, t: number): void {
+    const b = e.buf;
+    if (b.length === 1) {
+      e.x = b[0].x; e.y = b[0].y; e.z = b[0].z; e.yaw = b[0].yaw;
+      return;
+    }
+    if (t <= b[0].t) {
+      e.x = b[0].x; e.y = b[0].y; e.z = b[0].z; e.yaw = b[0].yaw;
+      return;
+    }
+    const last = b[b.length - 1];
+    if (t >= last.t) {
+      // starved (no newer sample yet) — hold at newest
+      e.x = last.x; e.y = last.y; e.z = last.z; e.yaw = last.yaw;
+      return;
+    }
+    // find bracketing pair
+    for (let i = b.length - 1; i > 0; i--) {
+      if (t >= b[i - 1].t) {
+        const a = b[i - 1], c = b[i];
+        const f = (t - a.t) / Math.max(1, c.t - a.t);
+        e.x = a.x + (c.x - a.x) * f;
+        e.y = a.y + (c.y - a.y) * f;
+        e.z = a.z + (c.z - a.z) * f;
+        e.yaw = shortestAngleLerp(a.yaw, c.yaw, f);
+        return;
+      }
+    }
+  }
+
   getRenderPos(id: number): THREE.Vector3 | null {
     const e = this.ents.get(id);
     return e ? new THREE.Vector3(e.x, e.y, e.z) : null;
@@ -190,7 +219,6 @@ export class WorldView {
     out.sort((a, b) => a - b);
     return out;
   }
-  /** Snapshot of all current render entities (for the model LOD picker). */
   entities(): RenderEnt[] {
     return [...this.ents.values()];
   }

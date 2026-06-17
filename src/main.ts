@@ -120,7 +120,7 @@ function frame(now: number) {
 
   models.update(dt, targetPos, view.entities());
   view.setSuppressed(models.suppressed);
-  view.update(dt, targetPos ?? undefined, RENDER_RADIUS_M);
+  view.update(now, targetPos ?? undefined, RENDER_RADIUS_M);
   terrain.update(dt, targetPos);
   grass.update(targetPos);
   spectate.update(dt, view);

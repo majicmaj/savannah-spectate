@@ -41,6 +41,15 @@ export const TREE_MODEL = "models/acaia_tree.glb";
 // --- grass (grass_gen.gd) — GRASS_SEED declared above ---
 export const FOOD_CAP = 40000;
 export const GRASS_MIN_SPACING = 3.0;
+export const GRASS_FULL_HEIGHT_M = 3.0; // GRASS_FULL_HEIGHT_M — tuft height at food=1
+export const GRASS_WIDTH_M = 1.6; // build_crossed_mesh quad width
+
+// --- snapshot interpolation ---
+// Render at now - INTERP_DELAY so there's always a newer sample to interpolate
+// toward (snapshots arrive at 20 Hz / 50 ms). Mirrors the native client's
+// render-lag buffer; trades ~0.1s latency (irrelevant for spectating) for
+// continuous motion instead of ease-and-stop stutter.
+export const INTERP_DELAY_MS = 110;
 
 // Spectator gateway listens here (separate from the game's WebSocketMultiplayerPeer).
 export const SPECTATE_GATEWAY_PORT = 8091;
