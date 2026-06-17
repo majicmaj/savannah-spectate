@@ -1,10 +1,10 @@
 import * as THREE from "three";
 import { GatewayClient } from "./net/gateway_client.js";
 import { WorldView } from "./render/world_view.js";
+import { AnimalModels } from "./render/animal_models.js";
 import { SpectateCamera } from "./render/spectate_camera.js";
 import { WORLD_SIZE, SPECIES_LABELS, SPECTATE_GATEWAY_PORT } from "./world/constants.js";
 
-// --- gateway URL: #ws=ws://host:port overrides; default to this host on the gateway port ---
 function gatewayUrl(): string {
   const m = location.hash.match(/ws=([^&]+)/);
   if (m) return decodeURIComponent(m[1]);
@@ -23,15 +23,14 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x8fbcd4);
-scene.fog = new THREE.Fog(0x8fbcd4, 120, 400);
+scene.fog = new THREE.Fog(0x8fbcd4, 140, 460);
 
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
 camera.position.set(0, 30, 60);
 
-// --- lighting (toon-friendly) ---
-const hemi = new THREE.HemisphereLight(0xcfe8ff, 0x4a6b3a, 0.9);
+const hemi = new THREE.HemisphereLight(0xcfe8ff, 0x6a7b4a, 0.85);
 scene.add(hemi);
-const sun = new THREE.DirectionalLight(0xfff2d8, 1.4);
+const sun = new THREE.DirectionalLight(0xfff2d8, 1.5);
 sun.position.set(80, 160, 60);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
@@ -41,35 +40,43 @@ sun.shadow.camera.top = 120;
 sun.shadow.camera.bottom = -120;
 sun.shadow.camera.far = 400;
 scene.add(sun);
+const sunTarget = new THREE.Object3D();
+scene.add(sunTarget);
+sun.target = sunTarget;
 
-// --- ground: the 1024x1024 toroidal world, centered at origin ---
+// ground placeholder (replaced by real voxel terrain in the next milestone)
 const ground = new THREE.Mesh(
   new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE),
-  new THREE.MeshToonMaterial({ color: 0x6f9e54 }),
+  new THREE.MeshToonMaterial({ color: 0x6f8a4a }),
 );
 ground.rotation.x = -Math.PI / 2;
+ground.position.y = 27; // ~VOXEL_HEIGHT_BASE so animals (server py) sit near it
 ground.receiveShadow = true;
 scene.add(ground);
-const grid = new THREE.GridHelper(WORLD_SIZE, 64, 0x557a3f, 0x557a3f);
-(grid.material as THREE.Material).opacity = 0.25;
+const grid = new THREE.GridHelper(WORLD_SIZE, 64, 0x55703f, 0x55703f);
+grid.position.y = 27.02;
+(grid.material as THREE.Material).opacity = 0.2;
 (grid.material as THREE.Material).transparent = true;
 scene.add(grid);
 
 const view = new WorldView();
 scene.add(view.group);
+const models = new AnimalModels();
+scene.add(models.group);
 const spectate = new SpectateCamera(camera);
 
-// --- gateway ---
-let status: string = "connecting";
+let modelStatus = "loading models…";
+models.load((d, t) => (modelStatus = `loading models ${d}/${t}`)).then(() => (modelStatus = "models ready"));
+
+let status = "connecting";
 const client = new GatewayClient(gatewayUrl());
 client.onStatus = (s) => (status = s);
 client.onSnapshot = (snap) => {
-  view.applySnapshot(snap);
+  view.applySnapshot(snap, performance.now());
   spectate.ensureTarget(view);
 };
 client.connect();
 
-// --- controls ---
 window.addEventListener("keydown", (e) => {
   if (e.key === "r" || e.key === "R") spectate.random(view);
   else if (e.key === "[") spectate.step(view, -1);
@@ -82,35 +89,39 @@ window.addEventListener("resize", () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// --- render loop ---
 let last = performance.now();
-let fps = 0;
-let fpsAccum = 0;
-let fpsFrames = 0;
+let fps = 0, fpsAccum = 0, fpsFrames = 0;
 function frame(now: number) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
 
+  const tid = spectate.targetId;
+  const targetPos = tid != null ? view.getRenderPos(tid) : null;
+
+  // models first (uses last-frame positions), then capsules skip the modeled ids
+  models.update(dt, targetPos, view.entities());
+  view.setSuppressed(models.suppressed);
   view.update(dt);
   spectate.update(dt, view);
-  renderer.render(scene, camera);
 
-  fpsAccum += dt;
-  fpsFrames++;
-  if (fpsAccum >= 0.5) {
-    fps = fpsFrames / fpsAccum;
-    fpsAccum = 0;
-    fpsFrames = 0;
+  // keep the shadow frustum near the action
+  if (targetPos) {
+    sun.position.set(targetPos.x + 80, targetPos.y + 160, targetPos.z + 60);
+    sunTarget.position.copy(targetPos);
   }
 
-  const tid = spectate.targetId;
+  renderer.render(scene, camera);
+
+  fpsAccum += dt; fpsFrames++;
+  if (fpsAccum >= 0.5) { fps = fpsFrames / fpsAccum; fpsAccum = 0; fpsFrames = 0; }
+
   const info = tid != null ? view.getEntityInfo(tid) : null;
   const targetLabel =
     info && !info.isCorpse ? `${SPECIES_LABELS[info.animal] ?? "?"} #${tid} (size ${info.size.toFixed(1)})` : "—";
   const fresh = client.lastSnapshotAt && now - client.lastSnapshotAt < 1000;
   hud.textContent =
-    `${status}${fresh ? "" : " (stale)"}  ${(client.bytesPerSec / 1024).toFixed(1)} KB/s  snaps ${client.snapshotCount}\n` +
-    `entities ${view.count()}   FPS ${fps.toFixed(0)}\n` +
+    `${status}${fresh ? "" : " (stale)"}  ${(client.bytesPerSec / 1024).toFixed(1)} KB/s  ${modelStatus}\n` +
+    `entities ${view.count()}   models ${models.activeCount()}   FPS ${fps.toFixed(0)}\n` +
     `target ${targetLabel}`;
 
   requestAnimationFrame(frame);

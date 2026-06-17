@@ -1,10 +1,9 @@
-// Renders decoded snapshot entities as per-species InstancedMesh batches — the
-// whole herd costs ~1 draw call per species (the perf thesis in action). PoC uses
-// capsule placeholders; swapping in instanced-skinned GLBs (agargaro/instanced-mesh)
-// is a drop-in replacement of the geometry/material per species.
-//
-// Coord map: both Godot and Three.js are right-handed Y-up with -Z forward, so
-// snapshot (px,py,pz)->(x,y,z) and yaw->rotation.y map directly.
+// Renders decoded snapshot entities. Two layers:
+//  - far/most entities: per-species InstancedMesh capsules (~1 draw call/species)
+//  - near the spectate target: real GLB models take over (see animal_models.ts);
+//    those ids are "suppressed" here so they don't double-render as capsules.
+// Coord map: Godot & Three are right-handed Y-up, -Z forward → (px,py,pz)->(x,y,z),
+// yaw->rotation.y directly.
 
 import * as THREE from "three";
 import { ANIMAL_COLORS, P } from "../world/constants.js";
@@ -13,15 +12,23 @@ import type { DecodedSnapshot } from "../net/snapshot_codec.js";
 const SPECIES_COUNT = 8;
 const PER_SPECIES_CAP = 1024;
 
-interface Ent {
+export interface RenderEnt {
+  id: number;
   animal: number;
   size: number;
-  // target (latest snapshot) and render (smoothed) transforms
-  tx: number; ty: number; tz: number; tyaw: number;
-  rx: number; ry: number; rz: number; ryaw: number;
-  seen: boolean;
+  x: number; y: number; z: number; yaw: number;
+  speed: number;
+  aiState: number;
+  sleeping: boolean;
+  flightMode: number;
+  isFemale: boolean;
   isCorpse: boolean;
   meat: number;
+}
+
+interface Ent extends RenderEnt {
+  tx: number; ty: number; tz: number; tyaw: number;
+  seen: boolean;
 }
 
 function shortestAngleLerp(a: number, b: number, t: number): number {
@@ -36,23 +43,22 @@ export class WorldView {
   private corpseMesh: THREE.InstancedMesh;
   private ents = new Map<number, Ent>();
   private dummy = new THREE.Object3D();
+  private suppressed = new Set<number>(); // ids rendered by real GLB models instead
+  private lastSnapAt = 0;
 
   constructor() {
-    // One InstancedMesh per species. Capsule placeholder oriented along the
-    // body's forward (-Z): a stretched capsule reads as a rough animal blob.
     for (let a = 0; a < SPECIES_COUNT; a++) {
       const geo = new THREE.CapsuleGeometry(0.22, 0.7, 4, 8);
-      geo.rotateX(Math.PI / 2); // lay the capsule along -Z (forward)
+      geo.rotateX(Math.PI / 2);
       const [r, g, b] = ANIMAL_COLORS[a];
       const mat = new THREE.MeshToonMaterial({ color: new THREE.Color(r, g, b) });
       const mesh = new THREE.InstancedMesh(geo, mat, PER_SPECIES_CAP);
-      mesh.frustumCulled = false; // we cull by snapshot interest; instances move every frame
+      mesh.frustumCulled = false;
       mesh.count = 0;
       mesh.castShadow = true;
       this.meshes.push(mesh);
       this.group.add(mesh);
     }
-    // Corpses: a flat dark mound.
     const cgeo = new THREE.CapsuleGeometry(0.3, 0.5, 4, 8);
     cgeo.rotateZ(Math.PI / 2);
     this.corpseMesh = new THREE.InstancedMesh(
@@ -65,42 +71,55 @@ export class WorldView {
     this.group.add(this.corpseMesh);
   }
 
-  /** Apply a god-view keyframe snapshot: update targets, prune vanished entities. */
-  applySnapshot(snap: DecodedSnapshot): void {
+  setSuppressed(ids: Set<number>): void {
+    this.suppressed = ids;
+  }
+
+  applySnapshot(snap: DecodedSnapshot, nowMs: number): void {
+    const dt = this.lastSnapAt ? Math.max(0.001, (nowMs - this.lastSnapAt) / 1000) : 0.05;
+    this.lastSnapAt = nowMs;
+
     for (const e of this.ents.values()) e.seen = false;
 
     for (const [id, arr] of snap.p) {
-      let e = this.ents.get(id);
       const x = arr[P.PX] as number;
       const y = arr[P.PY] as number;
       const z = arr[P.PZ] as number;
       const yaw = arr[P.YAW] as number;
+      let e = this.ents.get(id);
       if (!e) {
         e = {
-          animal: (arr[P.ANIMAL] as number) & 7,
-          size: arr[P.SIZE] as number,
-          tx: x, ty: y, tz: z, tyaw: yaw,
-          rx: x, ry: y, rz: z, ryaw: yaw,
-          seen: true, isCorpse: false, meat: 1,
+          id, animal: (arr[P.ANIMAL] as number) & 7, size: arr[P.SIZE] as number,
+          x, y, z, yaw, speed: 0,
+          aiState: arr[P.AI_STATE] as number, sleeping: !!arr[P.SLEEPING],
+          flightMode: arr[P.FLIGHT_MODE] as number, isFemale: !!arr[P.IS_FEMALE],
+          isCorpse: false, meat: 1,
+          tx: x, ty: y, tz: z, tyaw: yaw, seen: true,
         };
         this.ents.set(id, e);
       } else {
+        const dx = x - e.tx, dz = z - e.tz;
+        e.speed = Math.sqrt(dx * dx + dz * dz) / dt;
         e.animal = (arr[P.ANIMAL] as number) & 7;
         e.size = arr[P.SIZE] as number;
-        e.tx = x; e.ty = y; e.tz = z; e.tyaw = yaw;
-        e.seen = true;
+        e.aiState = arr[P.AI_STATE] as number;
+        e.sleeping = !!arr[P.SLEEPING];
+        e.flightMode = arr[P.FLIGHT_MODE] as number;
+        e.isFemale = !!arr[P.IS_FEMALE];
+        e.tx = x; e.ty = y; e.tz = z; e.tyaw = yaw; e.seen = true;
       }
     }
 
-    // Corpses keyed in a separate id space; prefix to avoid colliding with players.
     for (const [cid, c] of snap.c) {
       const id = 0x40000000 | cid;
-      let e = this.ents.get(id);
       const [x, z, size, meat, cyaw] = c;
+      let e = this.ents.get(id);
       if (!e) {
         e = {
-          animal: -1, size, tx: x, ty: 0, tz: z, tyaw: cyaw,
-          rx: x, ry: 0, rz: z, ryaw: cyaw, seen: true, isCorpse: true, meat,
+          id, animal: -1, size, x, y: 0, z, yaw: cyaw, speed: 0,
+          aiState: 0, sleeping: false, flightMode: 0, isFemale: false,
+          isCorpse: true, meat,
+          tx: x, ty: 0, tz: z, tyaw: cyaw, seen: true,
         };
         this.ents.set(id, e);
       } else {
@@ -111,38 +130,33 @@ export class WorldView {
     for (const [id, e] of this.ents) if (!e.seen) this.ents.delete(id);
   }
 
-  /** Per-frame: smooth render transforms toward targets, rewrite instance matrices. */
   update(dt: number): void {
-    const k = 1 - Math.exp(-12 * dt); // exponential smoothing
+    const k = 1 - Math.exp(-12 * dt);
     const counts = new Array(SPECIES_COUNT).fill(0);
     let corpseCount = 0;
 
     for (const e of this.ents.values()) {
-      e.rx += (e.tx - e.rx) * k;
-      e.ry += (e.ty - e.ry) * k;
-      e.rz += (e.tz - e.rz) * k;
-      e.ryaw = shortestAngleLerp(e.ryaw, e.tyaw, k);
+      e.x += (e.tx - e.x) * k;
+      e.y += (e.ty - e.y) * k;
+      e.z += (e.tz - e.z) * k;
+      e.yaw = shortestAngleLerp(e.yaw, e.tyaw, k);
 
-      this.dummy.position.set(e.rx, e.ry, e.rz);
-      this.dummy.rotation.set(0, e.ryaw, 0);
+      if (this.suppressed.has(e.id)) continue; // a real GLB model is drawing this one
+
+      this.dummy.position.set(e.x, e.y, e.z);
+      this.dummy.rotation.set(0, e.yaw, 0);
 
       if (e.isCorpse) {
         const s = Math.max(0.3, e.size);
         this.dummy.scale.set(s, s * 0.5, s);
         this.dummy.updateMatrix();
-        if (corpseCount < this.corpseMesh.count + 512) {
-          this.corpseMesh.setMatrixAt(corpseCount++, this.dummy.matrix);
-        }
+        if (corpseCount < 512) this.corpseMesh.setMatrixAt(corpseCount++, this.dummy.matrix);
       } else {
         const s = Math.max(0.4, e.size);
-        // capsule authored ~1.1 units tall; scale to roughly the animal size
         this.dummy.scale.set(s * 0.6, s * 0.6, s);
         this.dummy.updateMatrix();
         const a = e.animal;
-        const mesh = this.meshes[a];
-        if (counts[a] < PER_SPECIES_CAP) {
-          mesh.setMatrixAt(counts[a]++, this.dummy.matrix);
-        }
+        if (counts[a] < PER_SPECIES_CAP) this.meshes[a].setMatrixAt(counts[a]++, this.dummy.matrix);
       }
     }
 
@@ -154,31 +168,27 @@ export class WorldView {
     this.corpseMesh.instanceMatrix.needsUpdate = true;
   }
 
-  /** Smoothed render position of an entity, for the spectate camera to follow. */
   getRenderPos(id: number): THREE.Vector3 | null {
     const e = this.ents.get(id);
-    if (!e) return null;
-    return new THREE.Vector3(e.rx, e.ry, e.rz);
+    return e ? new THREE.Vector3(e.x, e.y, e.z) : null;
   }
-
   getRenderYaw(id: number): number {
-    return this.ents.get(id)?.ryaw ?? 0;
+    return this.ents.get(id)?.yaw ?? 0;
   }
-
   getEntityInfo(id: number): { animal: number; size: number; isCorpse: boolean } | null {
     const e = this.ents.get(id);
-    if (!e) return null;
-    return { animal: e.animal, size: e.size, isCorpse: e.isCorpse };
+    return e ? { animal: e.animal, size: e.size, isCorpse: e.isCorpse } : null;
   }
-
-  /** Live player/animal ids (excludes corpses), for spectate target cycling. */
   liveIds(): number[] {
     const out: number[] = [];
     for (const [id, e] of this.ents) if (!e.isCorpse) out.push(id);
     out.sort((a, b) => a - b);
     return out;
   }
-
+  /** Snapshot of all current render entities (for the model LOD picker). */
+  entities(): RenderEnt[] {
+    return [...this.ents.values()];
+  }
   count(): number {
     return this.ents.size;
   }
