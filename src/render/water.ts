@@ -91,7 +91,7 @@ export class Water {
         }`,
       fragmentShader: `
         uniform vec3 uColorDeep, uColorShallow, uSunDir, uSunColor, uCamPos;
-        uniform float uReflectivity, uDaylight;
+        uniform float uReflectivity, uDaylight, uTime;
         uniform samplerCube uEnvMap;
         varying float vDepth; varying vec3 vWorld; varying vec3 vNormal;
 
@@ -144,8 +144,9 @@ export class Water {
           float spec = pow(max(dot(N, Hh), 0.0), 280.0);
           col += uSunColor * spec * uDaylight;
 
-          // alpha: more opaque at grazing angles; fade the shoreline to nothing
-          float edge = smoothstep(0.04, 0.55, vDepth);
+          // alpha: more opaque at grazing angles; soften just the thin shore band
+          // (rivers are often <0.5m deep, so the fade must stay near the waterline)
+          float edge = smoothstep(0.04, 0.14, vDepth);
           float alpha = mix(0.70, 0.97, fres) * edge;
           gl_FragColor = vec4(col, alpha);
         }`,
