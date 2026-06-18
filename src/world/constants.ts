@@ -74,6 +74,9 @@ export const INTERP_DELAY_MS = 125;
 
 // Spectator gateway listens here (separate from the game's WebSocketMultiplayerPeer).
 export const SPECTATE_GATEWAY_PORT = 8091;
+// Production gateway endpoint (WSS via the cloudflared tunnel). Used when the
+// viewer is served over https; local dev still uses ws://<host>:8091.
+export const SPECTATE_GATEWAY_WSS = "wss://spectate-gw.hobbyhood.app";
 
 // animal id -> name (constants.gd:6157 SPECIES_LABELS)
 export const SPECIES_LABELS = [

@@ -18,12 +18,14 @@ import { settings } from "./settings.js";
 import { Heightmap } from "./world/heightmap.js";
 import { computeDayNight, CYCLE_SECONDS } from "./world/daynight.js";
 import {
-  WORLD_SIZE, SPECIES_LABELS, SPECTATE_GATEWAY_PORT, RENDER_RADIUS_M, VOXEL_HEIGHT_BASE,
+  WORLD_SIZE, SPECIES_LABELS, SPECTATE_GATEWAY_PORT, SPECTATE_GATEWAY_WSS, RENDER_RADIUS_M, VOXEL_HEIGHT_BASE,
 } from "./world/constants.js";
 
 function gatewayUrl(): string {
   const m = location.hash.match(/ws=([^&]+)/);
   if (m) return decodeURIComponent(m[1]);
+  // served over https (production) → WSS tunnel; mixed-content blocks ws:// there
+  if (location.protocol === "https:") return SPECTATE_GATEWAY_WSS;
   const host = location.hostname || "localhost";
   return `ws://${host}:${SPECTATE_GATEWAY_PORT}`;
 }
