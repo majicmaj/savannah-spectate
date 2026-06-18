@@ -8,6 +8,7 @@ import * as THREE from "three";
 import { Heightmap } from "../world/heightmap.js";
 import {
   VOXEL_WATER_LEVEL, GRASS_FULL_HEIGHT_M, GRASS_WIDTH_M,
+  GRASS_TINT_DRY_A, GRASS_TINT_DRY_B, GRASS_TINT_WET_A, GRASS_TINT_WET_B,
 } from "../world/constants.js";
 import { settings } from "../settings.js";
 
@@ -22,6 +23,29 @@ function hash2(x: number, z: number): number {
   let h = (Math.imul(x, 374761393) + Math.imul(z, 668265263)) >>> 0;
   h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+// net.gd _grass_hash01: fract(sin(fid*12.9898 + salt) * 43758.5453)
+function ghash(fid: number, salt: number): number {
+  const v = Math.sin(fid * 12.9898 + salt) * 43758.5453;
+  return v - Math.floor(v);
+}
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+const mix3 = (a: readonly number[], b: readonly number[], t: number): [number, number, number] =>
+  [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+
+// Port of net.gd _grass_color: per-blade dry/wet palette + hash jitter + shade.
+// water_t (0..0.5) comes from the heightmap's water proximity. fid is a stable
+// per-cell id so a tuft keeps its color as the carpet rebuilds around the target.
+function grassTuftColor(fid: number, waterT: number): [number, number, number] {
+  const dry = mix3(GRASS_TINT_DRY_A, GRASS_TINT_DRY_B, ghash(fid, 0));
+  const wet = mix3(GRASS_TINT_WET_A, GRASS_TINT_WET_B, ghash(fid, 31));
+  const c = mix3(dry, wet, waterT);
+  const shade = lerp(0.82, 1.18, ghash(fid, 17));
+  c[0] *= lerp(0.88, 1.12, ghash(fid, 47)) * shade;
+  c[1] *= lerp(0.90, 1.15, ghash(fid, 61)) * shade;
+  c[2] *= lerp(0.82, 1.10, ghash(fid, 73)) * shade;
+  return c;
 }
 
 export class Grass {
@@ -104,8 +128,9 @@ export class Grass {
         this.dummy.scale.set(s, s, s);
         this.dummy.updateMatrix();
         this.mesh.setMatrixAt(n, this.dummy.matrix);
-        const tc = this.hm.topColor(wx, wz);
-        this.mesh.setColorAt(n, new THREE.Color(tc[0] * 1.3, tc[1] * 1.4, tc[2] * 1.1));
+        const fid = ((Math.imul(cx, 73856093) ^ Math.imul(cz, 19349663)) >>> 0) % 1000000;
+        const tc = grassTuftColor(fid, this.hm.grassWaterT(wx, wz));
+        this.mesh.setColorAt(n, new THREE.Color(tc[0], tc[1], tc[2]));
         this.posXZ[n * 2] = wx;
         this.posXZ[n * 2 + 1] = wz;
         n++;

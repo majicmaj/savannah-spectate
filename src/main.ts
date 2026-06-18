@@ -7,6 +7,7 @@ import { Terrain } from "./render/terrain.js";
 import { Grass } from "./render/grass.js";
 import { Trees } from "./render/trees.js";
 import { Water } from "./render/water.js";
+import { Sky } from "./render/sky.js";
 import { HitJuice } from "./render/hit_juice.js";
 import { CorpseModels } from "./render/corpse_models.js";
 import { Hud } from "./render/hud.js";
@@ -84,6 +85,8 @@ const grass = new Grass();
 scene.add(grass.mesh);
 const water = new Water();
 scene.add(water.mesh);
+const sky = new Sky(camera.far * 0.95);
+scene.add(sky.mesh);
 const trees = new Trees();
 scene.add(trees.group);
 const hitJuice = new HitJuice();
@@ -240,6 +243,8 @@ function frame(now: number) {
   scene.fog!.color.setRGB(dn.fogColor[0], dn.fogColor[1], dn.fogColor[2]);
 
   water.update(now / 1000, camera.position, dn.sunDir, dn.sunColor, dn.skyColor);
+  // sky dome: zenith = sky color, horizon = fog color (so terrain edge blends in)
+  sky.update(now / 1000, camera.position, dn.sunDir, dn.sunColor, dn.skyColor, dn.fogColor, dn.daylight, settings.cloudCover);
 
   // audio: music/ambient day-night, calls, hit impacts (+ juice), eating
   const night = dn.daylight < 0.35;

@@ -6,6 +6,7 @@
 import {
   VOXEL_WATER_LEVEL, VOXEL_DRY_FALLOFF, WATER_DIST_MAX,
   COL_GRASS_GREEN, COL_GRASS_DRY, COL_SAND, COL_MUD,
+  GRASS_WATER_GREEN_FALLOFF, GRASS_TINT_WATER_SCALE, GRASS_DRY_MID, GRASS_WET_MID,
 } from "./constants.js";
 
 function lerp3(a: readonly number[], b: readonly number[], t: number): [number, number, number] {
@@ -61,6 +62,23 @@ export class Heightmap {
     const d = this.waterDist[this.zi(z) * this.W + this.xi(x)];
     const dryT = Math.min(1, d / VOXEL_DRY_FALLOFF);
     return lerp3(COL_GRASS_GREEN, COL_GRASS_DRY, dryT);
+  }
+
+  /** Meters to the nearest water voxel (toroidal BFS, capped at WATER_DIST_MAX). */
+  waterDistAt(x: number, z: number): number {
+    if (!this.loaded) return WATER_DIST_MAX;
+    return this.waterDist[this.zi(z) * this.W + this.xi(x)];
+  }
+
+  /** Water-proximity factor 0(dry)..GRASS_TINT_WATER_SCALE(wet) — net.gd _water_bank_factor×SCALE. */
+  grassWaterT(x: number, z: number): number {
+    const d = this.waterDistAt(x, z);
+    return (1 - Math.min(1, d / GRASS_WATER_GREEN_FALLOFF)) * GRASS_TINT_WATER_SCALE;
+  }
+
+  /** Ground voxel grass palette = mix(dry_mid, wet_mid, water_t) (voxel_top/side shaders). */
+  grassGroundColor(x: number, z: number): [number, number, number] {
+    return lerp3(GRASS_DRY_MID, GRASS_WET_MID, this.grassWaterT(x, z));
   }
 
   private computeWaterDist(): void {

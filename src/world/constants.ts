@@ -46,6 +46,22 @@ export const GRASS_FULL_HEIGHT_M = 3.0; // tuft height at food=1
 // to ~3 m tall → ~6 m wide. Match that aspect so tufts read as wide bushy clumps.
 export const GRASS_WIDTH_M = 6.0;
 
+// --- grass recolor (net.gd _grass_color + voxel grass shaders) ---
+// Single source of truth shared by tufts (per-blade, CPU) and ground voxel
+// tops/sides (per-pair midpoints). Dry = far-from-water straw, wet = near-water
+// green; a column's water-proximity factor (×SCALE) lerps dry→wet. RGB 0..1+
+// (values >1 are intentional over-bright tints, multiplied onto the texture).
+//   source: constants.gd GRASS_TINT_* (1226-1237)
+export const GRASS_TINT_DRY_A: [number, number, number] = [1.08, 0.96, 0.46]; // bright straw
+export const GRASS_TINT_DRY_B: [number, number, number] = [0.86, 0.82, 0.30]; // dull straw
+export const GRASS_TINT_WET_A: [number, number, number] = [0.46, 0.95, 0.24]; // bright green
+export const GRASS_TINT_WET_B: [number, number, number] = [0.66, 1.06, 0.28]; // dull green
+export const GRASS_TINT_WATER_SCALE = 0.5; // caps the dry→wet lerp at the water's edge
+export const GRASS_WATER_GREEN_FALLOFF = 30.0; // greenness fades beyond 30 m from water
+// ground voxel grass uses the per-pair midpoints (voxel_materials.gd grass_*_mid)
+export const GRASS_DRY_MID: [number, number, number] = [0.97, 0.89, 0.38];
+export const GRASS_WET_MID: [number, number, number] = [0.56, 1.005, 0.26];
+
 // --- snapshot interpolation ---
 // Render at now - INTERP_DELAY so there's always a newer sample to interpolate
 // toward (snapshots arrive at 20 Hz / 50 ms). Mirrors the native client's

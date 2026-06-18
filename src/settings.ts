@@ -14,6 +14,7 @@ export const settings = {
   renderRadiusM: RENDER_RADIUS_M, // grass/cull/fog radius (m)
   fov: 60,
   shadows: true,
+  cloudCover: 0.5, // sky cloud coverage 0(clear)..1(overcast)
 };
 
 export type Settings = typeof settings;

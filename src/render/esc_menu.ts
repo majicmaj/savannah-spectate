@@ -39,6 +39,7 @@ export class EscMenu {
       (v) => { settings.chunkRadius = v; settings.renderRadiusM = Math.round(v * 31); this.onApply?.(); },
       (v) => `${Math.round(v * 31)} m`);
     this.slider(panel, "FOV", 45, 95, 1, () => settings.fov, (v) => { settings.fov = v; this.onApply?.(); }, (v) => `${v}`);
+    this.slider(panel, "Clouds", 0, 1, 0.05, () => settings.cloudCover, (v) => (settings.cloudCover = v), (v) => `${Math.round(v * 100)}%`);
     this.checkbox(panel, "Shadows", () => settings.shadows, (v) => { settings.shadows = v; this.onApply?.(); });
 
     const hint = document.createElement("div");
