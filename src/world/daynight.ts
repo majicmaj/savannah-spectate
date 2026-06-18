@@ -11,18 +11,21 @@ const TAU = Math.PI * 2;
 
 type C = [number, number, number];
 const SUN_DAY: C = [1.0, 0.97, 0.92];
-const SUN_DUSK: C = [1.0, 0.55, 0.22];
-const SKY_FOG_DAY: C = [0.78, 0.88, 0.99];
-const SKY_FOG_DUSK: C = [0.55, 0.44, 0.46];
-const SKY_FOG_NIGHT: C = [0.07, 0.1, 0.22];
+const SUN_DUSK: C = [1.0, 0.5, 0.18];
+// Horizon (fog) band. Day = warm pale haze; dusk = orange→mauve; night = deep blue.
+const SKY_FOG_DAY: C = [0.74, 0.85, 0.98];
+const SKY_FOG_DUSK: C = [0.62, 0.4, 0.34];
+const SKY_FOG_NIGHT: C = [0.05, 0.08, 0.2];
 const AMBIENT_DAY: C = [0.82, 0.78, 0.66];
-const AMBIENT_NIGHT: C = [0.34, 0.4, 0.62];
-const MOON_ZENITH: C = [0.55, 0.7, 1.05];
-const MOON_HORIZON: C = [0.85, 0.78, 0.92];
-// sky-dome top colors (not in DayNight; horizon uses SKY_FOG_*)
-const SKY_TOP_DAY: C = [0.4, 0.62, 0.92];
-const SKY_TOP_DUSK: C = [0.5, 0.32, 0.42];
-const SKY_TOP_NIGHT: C = [0.02, 0.04, 0.11];
+// Night ambient pushed bluer/cooler so the world reads as moonlit, not grey.
+const AMBIENT_NIGHT: C = [0.24, 0.32, 0.62];
+const MOON_ZENITH: C = [0.62, 0.74, 1.1];
+const MOON_HORIZON: C = [0.88, 0.82, 0.96];
+// sky-dome top (zenith) colors. Day = deep saturated blue; dusk = mauve;
+// night = near-black indigo for a real night feel.
+const SKY_TOP_DAY: C = [0.24, 0.49, 0.88];
+const SKY_TOP_DUSK: C = [0.42, 0.28, 0.44];
+const SKY_TOP_NIGHT: C = [0.012, 0.025, 0.1];
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 function smoothstep(e0: number, e1: number, x: number): number {

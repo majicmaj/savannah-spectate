@@ -27,6 +27,9 @@ export class Sky {
         uSkyHorizon: { value: new THREE.Color(0xc7e0fb) },
         uSunDir: { value: new THREE.Vector3(0, 1, 0) },
         uSunColor: { value: new THREE.Color(0xfff2d8) },
+        uMoonDir: { value: new THREE.Vector3(0, -1, 0) },
+        uMoonColor: { value: new THREE.Color(0xbfd0ff) },
+        uMoonEnergy: { value: 0 },
         uCloudLit: { value: new THREE.Color(0xffffff) },
         uCloudDark: { value: new THREE.Color(0x8693a0) },
         uCover: { value: 0.5 },
@@ -40,9 +43,21 @@ export class Sky {
           gl_Position = p.xyww;            // pin depth to the far plane (always behind the world)
         }`,
       fragmentShader: `
-        uniform float uTime, uCover, uDaylight;
-        uniform vec3 uSkyTop, uSkyHorizon, uSunDir, uSunColor, uCloudLit, uCloudDark;
+        uniform float uTime, uCover, uDaylight, uMoonEnergy;
+        uniform vec3 uSkyTop, uSkyHorizon, uSunDir, uSunColor, uMoonDir, uMoonColor, uCloudLit, uCloudDark;
         varying vec3 vDir;
+
+        // crisp square celestial body: 1 inside an angular box around bodyDir, soft edge.
+        // (axis-aligned in a stable tangent frame so it reads as a pixel-art square.)
+        float squareBody(vec3 dir, vec3 bodyDir, float halfSize, float soft){
+          if (dot(dir, bodyDir) <= 0.0) return 0.0;
+          vec3 up = abs(bodyDir.y) > 0.95 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0);
+          vec3 right = normalize(cross(up, bodyDir));
+          vec3 bup = cross(bodyDir, right);
+          float u = dot(dir, right), v = dot(dir, bup);  // small-angle tangent offsets
+          float d = max(abs(u), abs(v));
+          return 1.0 - smoothstep(halfSize - soft, halfSize + soft, d);
+        }
 
         // cheap value-noise fbm (no textures)
         float hash(vec2 p){
@@ -71,10 +86,13 @@ export class Sky {
           float t = clamp(elev, 0.0, 1.0);
           vec3 sky = mix(uSkyHorizon, uSkyTop, pow(t, 0.5));
 
-          // sun disk + soft glow
-          float sd = max(dot(dir, uSunDir), 0.0);
-          sky += uSunColor * pow(sd, 350.0) * 1.6;             // crisp disk
-          sky += uSunColor * pow(sd, 6.0) * 0.18 * uDaylight;  // halo, fades at night
+          float sd = max(dot(dir, uSunDir), 0.0);  // kept for cloud rim-light below
+
+          // square sun — crisp pixel-art block, no glowing blob. Gated above the horizon.
+          float sunVis = smoothstep(-0.03, 0.06, uSunDir.y);
+          sky += uSunColor * squareBody(dir, uSunDir, 0.052, 0.004) * 1.5 * sunVis;
+          // square moon — same, lit by its day/night energy
+          sky += uMoonColor * squareBody(dir, uMoonDir, 0.042, 0.004) * (0.7 + uMoonEnergy * 1.6);
 
           // clouds only above the horizon; project the view dir onto a flat layer
           float cloudMask = smoothstep(0.02, 0.16, elev);
@@ -117,11 +135,15 @@ export class Sky {
     t: number, camPos: THREE.Vector3, sunDir: THREE.Vector3,
     sunColor: [number, number, number], skyTop: [number, number, number],
     skyHorizon: [number, number, number], daylight: number, cover: number,
+    moonDir?: THREE.Vector3, moonColor?: [number, number, number], moonEnergy = 0,
   ): void {
     const u = this.mat.uniforms;
     u.uTime.value = t;
     u.uSunDir.value.copy(sunDir);
     u.uSunColor.value.setRGB(sunColor[0], sunColor[1], sunColor[2]);
+    if (moonDir) u.uMoonDir.value.copy(moonDir);
+    if (moonColor) u.uMoonColor.value.setRGB(moonColor[0], moonColor[1], moonColor[2]);
+    u.uMoonEnergy.value = moonEnergy;
     u.uSkyTop.value.setRGB(skyTop[0], skyTop[1], skyTop[2]);
     u.uSkyHorizon.value.setRGB(skyHorizon[0], skyHorizon[1], skyHorizon[2]);
     u.uDaylight.value = daylight;

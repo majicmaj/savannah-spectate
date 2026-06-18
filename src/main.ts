@@ -273,7 +273,7 @@ function frame(now: number) {
 
   water.update(now / 1000, camera.position, dn.sunDir, dn.sunColor, dn.skyColor, dn.daylight);
   // sky dome: zenith = sky color, horizon = fog color (so terrain edge blends in)
-  sky.update(now / 1000, camera.position, dn.sunDir, dn.sunColor, dn.skyColor, dn.fogColor, dn.daylight, settings.cloudCover);
+  sky.update(now / 1000, camera.position, dn.sunDir, dn.sunColor, dn.skyColor, dn.fogColor, dn.daylight, settings.cloudCover, dn.moonDir, dn.moonColor, dn.moonEnergy);
   // rebake the sky→cube env for water reflections (sky is positioned above, so bake after its update)
   if (now - lastEnvBake > 400) { envCam.position.copy(camera.position); envCam.update(renderer, scene); lastEnvBake = now; }
 
@@ -307,10 +307,19 @@ function frame(now: number) {
   const targetLabel =
     info && !info.isCorpse ? `${SPECIES_LABELS[info.animal] ?? "?"} #${tid} (size ${info.size.toFixed(1)})` : "—";
   const fresh = client.lastSnapshotAt && now - client.lastSnapshotAt < 1000;
+  // time-of-day clock from the normalized cycle fraction (0 = midnight, 0.5 = noon)
+  const hh24 = tNorm * 24;
+  const hh = Math.floor(hh24) % 24;
+  const mm = Math.floor((hh24 - Math.floor(hh24)) * 60);
+  const clock = `${hh.toString().padStart(2, "0")}:${mm.toString().padStart(2, "0")}`;
+  // "net" = age of the most recent snapshot (ms). No true RTT — the gateway is
+  // push-only, so this is liveness, not round-trip latency.
+  const netMs = client.lastSnapshotAt ? Math.max(0, Math.round(now - client.lastSnapshotAt)) : 0;
   hud.textContent =
     `${status}${fresh ? "" : " (stale)"}  ${(client.bytesPerSec / 1024).toFixed(1)} KB/s  ${modelStatus}\n` +
     `${terrainStatus}  chunks ${terrain.chunkCount()}  grass ${grass.count()}\n` +
     `entities ${view.count()}   models ${models.activeCount()}   FPS ${fps.toFixed(0)}\n` +
+    `loc ${anchor.x.toFixed(0)}, ${anchor.z.toFixed(0)}   ${clock}   net ${netMs} ms\n` +
     `target ${targetLabel}`;
 
   // VSync off: free-run via timer. Pace to the FPS cap if set (delay = remaining
