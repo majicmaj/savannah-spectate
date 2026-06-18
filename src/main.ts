@@ -6,6 +6,7 @@ import { SpectateCamera } from "./render/spectate_camera.js";
 import { Terrain } from "./render/terrain.js";
 import { Grass } from "./render/grass.js";
 import { Trees } from "./render/trees.js";
+import { Water } from "./render/water.js";
 import { HitJuice } from "./render/hit_juice.js";
 import { CorpseModels } from "./render/corpse_models.js";
 import { Hud } from "./render/hud.js";
@@ -81,6 +82,8 @@ const terrain = new Terrain();
 scene.add(terrain.group);
 const grass = new Grass();
 scene.add(grass.mesh);
+const water = new Water();
+scene.add(water.mesh);
 const trees = new Trees();
 scene.add(trees.group);
 const hitJuice = new HitJuice();
@@ -131,6 +134,7 @@ client.onHeightmap = (payload) => {
   heightmap.ingest(payload);
   terrain.setHeightmap(heightmap);
   grass.setHeightmap(heightmap);
+  water.setHeightmap(heightmap);
   view.setHeightmap(heightmap); // ground corpses on the terrain
   terrainStatus = `terrain ${heightmap.W}×${heightmap.H}`;
   ground.visible = false; // real terrain takes over
@@ -234,6 +238,8 @@ function frame(now: number) {
   hemi.intensity = dn.ambientEnergy * 3.0 + 0.12;
   (scene.background as THREE.Color).setRGB(dn.skyColor[0], dn.skyColor[1], dn.skyColor[2]);
   scene.fog!.color.setRGB(dn.fogColor[0], dn.fogColor[1], dn.fogColor[2]);
+
+  water.update(now / 1000, camera.position, dn.sunDir, dn.sunColor, dn.skyColor);
 
   // audio: music/ambient day-night, calls, hit impacts (+ juice), eating
   const night = dn.daylight < 0.35;

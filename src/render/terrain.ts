@@ -6,9 +6,7 @@
 
 import * as THREE from "three";
 import { Heightmap } from "../world/heightmap.js";
-import {
-  VOXEL_CHUNK, VOXEL_WATER_LEVEL, VOXEL_WATER_SURFACE_OFFSET, RENDER_RADIUS_M,
-} from "../world/constants.js";
+import { VOXEL_CHUNK, VOXEL_WATER_LEVEL } from "../world/constants.js";
 import { settings } from "../settings.js";
 
 const CHUNK = VOXEL_CHUNK;
@@ -42,21 +40,12 @@ export class Terrain {
   private hm: Heightmap | null = null;
   private mats: THREE.Material[];
   private chunks = new Map<string, THREE.Mesh>();
-  private water: THREE.Mesh;
 
   constructor() {
     const grassTop = new THREE.MeshToonMaterial({ map: loadTex("/textures/grass_top.png") });
     const grassSide = new THREE.MeshToonMaterial({ map: loadTex("/textures/grass_side.png") });
     const dirt = new THREE.MeshToonMaterial({ map: loadTex("/textures/dirt.png", true) });
-    this.mats = [grassTop, grassSide, dirt]; // group indices 0/1/2
-
-    this.water = new THREE.Mesh(
-      new THREE.PlaneGeometry(RENDER_RADIUS_M * 2.4, RENDER_RADIUS_M * 2.4),
-      new THREE.MeshToonMaterial({ color: 0x2e6ba0, transparent: true, opacity: 0.82 }),
-    );
-    this.water.rotation.x = -Math.PI / 2;
-    this.water.position.y = VOXEL_WATER_LEVEL + VOXEL_WATER_SURFACE_OFFSET;
-    this.group.add(this.water);
+    this.mats = [grassTop, grassSide, dirt]; // group indices 0/1/2 (water is its own module)
   }
 
   setHeightmap(hm: Heightmap): void { this.hm = hm; }
@@ -64,9 +53,6 @@ export class Terrain {
 
   update(_dt: number, target: THREE.Vector3 | null): void {
     if (!this.hm?.loaded || !target) return;
-    this.water.position.x = target.x;
-    this.water.position.z = target.z;
-
     const ccx = Math.floor(target.x / CHUNK);
     const ccz = Math.floor(target.z / CHUNK);
     const R = settings.chunkRadius;
