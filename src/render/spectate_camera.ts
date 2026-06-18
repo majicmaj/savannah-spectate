@@ -4,6 +4,9 @@
 
 import * as THREE from "three";
 import type { WorldView } from "./world_view.js";
+import type { Heightmap } from "../world/heightmap.js";
+
+const GROUND_BUFFER = 2.2; // keep the camera this far above the terrain (m)
 
 const MIN_DIST = 3;
 const MAX_DIST = 60;
@@ -27,7 +30,10 @@ export class SpectateCamera {
   dragging = false; // set by mouse handlers
   arrows = { left: false, right: false, up: false, down: false };
 
+  private hm: Heightmap | null = null;
   constructor(readonly camera: THREE.PerspectiveCamera) {}
+
+  setHeightmap(hm: Heightmap): void { this.hm = hm; }
 
   zoom(deltaY: number): void {
     this.distance = THREE.MathUtils.clamp(this.distance + deltaY * 0.02, MIN_DIST, MAX_DIST);
@@ -37,6 +43,9 @@ export class SpectateCamera {
 
   /** F5: flip the camera to face the animal head-on instead of chasing behind. */
   flip(): void { this.facing = !this.facing; }
+
+  /** Spectate a specific entity (e.g. picked from the players menu). */
+  setTarget(id: number): void { this.targetId = id; }
 
   dragOrbit(dx: number, dy: number): void {
     this.orbitYaw += dx * DRAG_SENS;
@@ -112,6 +121,12 @@ export class SpectateCamera {
     const follow = this.initialized ? 1 - Math.exp(-7 * dt) : 1;
     this.initialized = true;
     this.camPos.lerp(desired, follow);
+    // never let the camera dip into the terrain — clamp above the ground (+buffer)
+    // at the camera's XZ. Cheap single heightmap lookup; keeps a no-clip margin.
+    if (this.hm?.loaded) {
+      const minY = this.hm.surfaceAt(this.camPos.x, this.camPos.z) + GROUND_BUFFER;
+      if (this.camPos.y < minY) this.camPos.y = minY;
+    }
     this.lookAt.lerp(new THREE.Vector3(pos.x, pos.y + 1, pos.z), follow);
     this.camera.position.copy(this.camPos);
     this.camera.lookAt(this.lookAt);

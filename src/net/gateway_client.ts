@@ -9,12 +9,37 @@ const FRAME_SNAPSHOT = 1;
 const FRAME_WORLD_INIT = 2;
 const FRAME_WORLD_HEIGHTS = 3;
 const FRAME_TIME = 4;
+const FRAME_ROSTER = 5;
+
+export interface RosterEntry { name: string; isPlayer: boolean; }
+export type RosterListener = (roster: Map<number, RosterEntry>) => void;
 
 export type SnapshotListener = (snap: DecodedSnapshot) => void;
 export type WorldInitListener = (payload: Uint8Array) => void;
 export type HeightmapListener = (payload: Uint8Array) => void;
 export type TimeListener = (timeOfDay: number) => void;
 export type StatusListener = (status: "connecting" | "open" | "closed") => void;
+
+// FRAME_ROSTER: [u16 count] then per entity [u32 id][u8 flags][u8 nameLen][name UTF-8]
+function decodeRoster(payload: Uint8Array): Map<number, RosterEntry> {
+  const out = new Map<number, RosterEntry>();
+  if (payload.byteLength < 2) return out;
+  const dv = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+  const dec = new TextDecoder();
+  let o = 0;
+  const count = dv.getUint16(o, true); o += 2;
+  for (let i = 0; i < count; i++) {
+    if (o + 6 > payload.byteLength) break;
+    const id = dv.getUint32(o, true); o += 4;
+    const flags = payload[o]; o += 1;
+    const nlen = payload[o]; o += 1;
+    if (o + nlen > payload.byteLength) break;
+    const name = nlen ? dec.decode(payload.subarray(o, o + nlen)) : "";
+    o += nlen;
+    out.set(id, { name, isPlayer: (flags & 1) !== 0 });
+  }
+  return out;
+}
 
 export class GatewayClient {
   private ws: WebSocket | null = null;
@@ -26,6 +51,7 @@ export class GatewayClient {
   onWorldInit: WorldInitListener | null = null;
   onHeightmap: HeightmapListener | null = null;
   onTime: TimeListener | null = null;
+  onRoster: RosterListener | null = null;
   onStatus: StatusListener | null = null;
 
   // diagnostics
@@ -89,6 +115,8 @@ export class GatewayClient {
         const t = new DataView(payload.buffer, payload.byteOffset, payload.byteLength).getFloat32(0, true);
         this.onTime?.(t);
       }
+    } else if (type === FRAME_ROSTER) {
+      this.onRoster?.(decodeRoster(payload));
     }
   }
 

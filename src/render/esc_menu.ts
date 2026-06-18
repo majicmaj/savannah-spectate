@@ -17,7 +17,8 @@ export class EscMenu {
     const root = document.createElement("div");
     root.style.cssText =
       "position:fixed;inset:0;z-index:20;display:none;align-items:center;justify-content:center;" +
-      "background:rgba(8,12,16,0.6);backdrop-filter:blur(2px);font:13px/1.5 ui-monospace,Menlo,monospace;color:#eef3f7;";
+      // NOTE: no backdrop-filter — blurring the full WebGL canvas every frame tanks FPS.
+      "background:rgba(8,12,16,0.62);font:13px/1.5 ui-monospace,Menlo,monospace;color:#eef3f7;";
     // close when clicking the dim backdrop (but not the panel)
     root.addEventListener("pointerdown", (e) => { if (e.target === root) this.toggle(); });
 

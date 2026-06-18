@@ -278,9 +278,11 @@ export class Grass {
   }
 
   /** Fade tufts near the focused animal or along the camera→animal line. */
-  updateAlpha(cam: THREE.Vector3, target: THREE.Vector3 | null): void {
+  updateAlpha(cam: THREE.Vector3, target: THREE.Vector3 | null, dt: number): void {
     const a = this.alphaAttr.array as Float32Array;
-    if (!target) { for (let i = 0; i < this.n; i++) a[i] = 1; this.alphaAttr.needsUpdate = true; return; }
+    // ease each tuft toward its target alpha so fades aren't instant (~0.18s)
+    const k = 1 - Math.exp(-9 * Math.min(0.05, dt));
+    if (!target) { for (let i = 0; i < this.n; i++) a[i] += (1 - a[i]) * k; this.alphaAttr.needsUpdate = true; return; }
     const near2 = NEAR_R * NEAR_R, corr2 = CORRIDOR * CORRIDOR;
     const sx = target.x - cam.x, sz = target.z - cam.z;
     const segLen2 = Math.max(1e-4, sx * sx + sz * sz);
@@ -298,7 +300,7 @@ export class Grass {
           if (perp < corr2) alpha = FADE_ALPHA;
         }
       }
-      a[i] = alpha;
+      a[i] += (alpha - a[i]) * k; // smooth transition instead of snapping
     }
     this.alphaAttr.needsUpdate = true;
   }

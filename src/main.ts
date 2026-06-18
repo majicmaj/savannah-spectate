@@ -16,6 +16,8 @@ import { HitJuice } from "./render/hit_juice.js";
 import { CorpseModels } from "./render/corpse_models.js";
 import { Hud } from "./render/hud.js";
 import { EscMenu } from "./render/esc_menu.js";
+import { PlayerMenu } from "./render/player_menu.js";
+import type { RosterEntry } from "./net/gateway_client.js";
 import { AudioSys } from "./render/audio.js";
 import { settings } from "./settings.js";
 import { Heightmap } from "./world/heightmap.js";
@@ -150,6 +152,9 @@ function applySettings() {
 escMenu.onApply = applySettings;
 applySettings();
 
+const playerMenu = new PlayerMenu();
+playerMenu.onSpectate = (id) => spectate.setTarget(id);
+
 const audio = new AudioSys();
 audio.attach(camera);
 // browsers block audio until a user gesture
@@ -180,6 +185,7 @@ client.onHeightmap = (payload) => {
   grass.setHeightmap(heightmap);
   water.setHeightmap(heightmap);
   fireflies.setHeightmap(heightmap);
+  spectate.setHeightmap(heightmap); // keep the camera above the terrain
   view.setHeightmap(heightmap); // ground corpses on the terrain
   terrainStatus = `terrain ${heightmap.W}×${heightmap.H}`;
   ground.visible = false; // real terrain takes over
@@ -188,15 +194,20 @@ client.onHeightmap = (payload) => {
 let weatherRain = 0;
 let weatherWetness = 0;
 const windDir = new THREE.Vector2(1, 0); // shared grass/tree sway direction
+let roster = new Map<number, RosterEntry>(); // id → {name, isPlayer} from FRAME_ROSTER
 client.onSnapshot = (snap) => {
   view.applySnapshot(snap, performance.now());
   spectate.ensureTarget(view);
   weatherRain += (snap.rain - weatherRain) * 0.25;
   weatherWetness += (snap.wetness - weatherWetness) * 0.25;
 };
+client.onRoster = (r) => { roster = r; if (playerMenu.visible) playerMenu.rebuild(roster, view); };
 client.connect();
 
+window.addEventListener("keyup", (e) => { if (e.key === "Tab") playerMenu.hide(); });
+
 window.addEventListener("keydown", (e) => {
+  if (e.key === "Tab") { e.preventDefault(); if (!playerMenu.visible) playerMenu.show(roster, view); return; }
   if (e.key === "Escape") escMenu.toggle();
   else if (e.key === "r" || e.key === "R") spectate.random(view);
   else if (e.key === "h" || e.key === "H") {
@@ -277,7 +288,7 @@ function frame(now: number) {
   terrain.update(dt, targetPos);
   grass.update(targetPos);
   spectate.update(dt, view);
-  grass.updateAlpha(camera.position, targetPos); // fade grass off the subject
+  grass.updateAlpha(camera.position, targetPos, dt); // fade grass off the subject (eased)
   if (corpseModels.loaded) corpseModels.update(view.entities().filter((e) => e.isCorpse));
   hitJuice.update(dt);
   // run dust: emit under fast-moving animals near the camera, then age the pool
@@ -297,7 +308,10 @@ function frame(now: number) {
   // bottom HUD: species name + live "<state> · <clock> <phase>" status
   const binfo = tid != null ? view.getEntityInfo(tid) : null;
   const aiLabel = binfo && !binfo.isCorpse ? (AI_STATE_LABELS[binfo.aiState] ?? "") : "";
-  const bName = binfo ? (binfo.isCorpse ? "Carcass" : (SPECIES_LABELS[binfo.animal] ?? "Animal")) : "";
+  const rName = tid != null ? roster.get(tid)?.name : undefined; // real game name (players + bots)
+  const bName = binfo
+    ? (binfo.isCorpse ? "Carcass" : (rName || SPECIES_LABELS[binfo.animal] || "Animal"))
+    : "";
   const bStatus = [aiLabel, `${clock} ${phase}`].filter(Boolean).join("   ·   ");
   bottomHud.update(tid != null ? view.getStats(tid) : null, bName, bStatus);
 
