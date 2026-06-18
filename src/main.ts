@@ -190,10 +190,15 @@ let lastDrawn = performance.now();
 let lastCenterSent = 0;
 let fps = 0, fpsAccum = 0, fpsFrames = 0;
 function frame(now: number) {
-  requestAnimationFrame(frame);
-  // FPS cap: throttle below the display refresh. (1ms slack so we don't skip the
-  // vsync we're actually aiming for.) cap=0 → render every animation frame.
-  if (settings.fpsCap > 0 && now - lastDrawn < 1000 / settings.fpsCap - 1) return;
+  // Schedule the next tick. VSync on → requestAnimationFrame (locked to the
+  // display refresh). VSync off → a timer loop driven from the tail below
+  // (free-run, decoupled from refresh). Exactly one is in flight at a time, so
+  // toggling vsync just changes the next tick's driver — no double loop.
+  if (settings.vsync) requestAnimationFrame(frame);
+  // VSync-on throttle: rAF oversamples the cap, so skip frames to hit the target.
+  // (1ms slack so we don't skip the vsync we're actually aiming for.) When vsync
+  // is off the timer paces us instead, so this guard is bypassed.
+  if (settings.vsync && settings.fpsCap > 0 && now - lastDrawn < 1000 / settings.fpsCap - 1) return;
   lastDrawn = now;
 
   const dt = Math.min(0.1, (now - last) / 1000);
@@ -288,5 +293,15 @@ function frame(now: number) {
     `${terrainStatus}  chunks ${terrain.chunkCount()}  grass ${grass.count()}\n` +
     `entities ${view.count()}   models ${models.activeCount()}   FPS ${fps.toFixed(0)}\n` +
     `target ${targetLabel}`;
+
+  // VSync off: free-run via timer. Pace to the FPS cap if set (delay = remaining
+  // time to the next target frame, measured after this frame's work), else ASAP
+  // (browsers clamp nested timers to ~4 ms ≈ 250 fps). rAF is not used here.
+  if (!settings.vsync) {
+    const delay = settings.fpsCap > 0
+      ? Math.max(0, 1000 / settings.fpsCap - (performance.now() - lastDrawn))
+      : 0;
+    setTimeout(() => frame(performance.now()), delay);
+  }
 }
 requestAnimationFrame(frame);

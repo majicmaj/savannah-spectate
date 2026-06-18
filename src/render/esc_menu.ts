@@ -48,6 +48,10 @@ export class EscMenu {
       () => Math.max(0, FPS_STEPS.indexOf(settings.fpsCap)),
       (v) => (settings.fpsCap = FPS_STEPS[v]),
       (v) => (FPS_STEPS[v] === 0 ? "Uncap" : `${FPS_STEPS[v]}`));
+    // VSync off frees the loop from the display refresh (timer-driven, paced by
+    // the FPS cap). The browser still presents at refresh, so it's a throughput
+    // benchmark, not extra visible frames — and uses more GPU/battery.
+    this.checkbox(panel, "VSync", () => settings.vsync, (v) => (settings.vsync = v));
     this.checkbox(panel, "Shadows", () => settings.shadows, (v) => { settings.shadows = v; this.onApply?.(); });
 
     const reset = document.createElement("button");

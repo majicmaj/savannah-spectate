@@ -17,6 +17,7 @@ function defaults() {
     shadows: true,
     cloudCover: 0.5, // sky cloud coverage 0(clear)..1(overcast)
     fpsCap: 0, // target FPS; 0 = uncapped (renders every animation frame / native refresh)
+    vsync: true, // true → rAF (locked to display refresh); false → timer loop (free-run, paced by fpsCap)
   };
 }
 
