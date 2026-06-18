@@ -186,9 +186,16 @@ window.addEventListener("resize", () => {
 });
 
 let last = performance.now();
+let lastDrawn = performance.now();
 let lastCenterSent = 0;
 let fps = 0, fpsAccum = 0, fpsFrames = 0;
 function frame(now: number) {
+  requestAnimationFrame(frame);
+  // FPS cap: throttle below the display refresh. (1ms slack so we don't skip the
+  // vsync we're actually aiming for.) cap=0 → render every animation frame.
+  if (settings.fpsCap > 0 && now - lastDrawn < 1000 / settings.fpsCap - 1) return;
+  lastDrawn = now;
+
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
 
@@ -281,7 +288,5 @@ function frame(now: number) {
     `${terrainStatus}  chunks ${terrain.chunkCount()}  grass ${grass.count()}\n` +
     `entities ${view.count()}   models ${models.activeCount()}   FPS ${fps.toFixed(0)}\n` +
     `target ${targetLabel}`;
-
-  requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

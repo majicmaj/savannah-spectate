@@ -2,10 +2,11 @@
 // sliders + visual controls (render distance, FOV, shadows). Mutates the shared
 // `settings`; visual changes fire onApply so main can re-apply camera/fog/renderer.
 
-import { settings } from "../settings.js";
+import { settings, resetSettings } from "../settings.js";
 
 export class EscMenu {
   private root: HTMLDivElement;
+  private refreshers: (() => void)[] = []; // re-sync each control's DOM from settings
   visible = false;
   onApply: (() => void) | null = null;
 
@@ -40,7 +41,27 @@ export class EscMenu {
       (v) => `${Math.round(v * 31)} m`);
     this.slider(panel, "FOV", 45, 95, 1, () => settings.fov, (v) => { settings.fov = v; this.onApply?.(); }, (v) => `${v}`);
     this.slider(panel, "Clouds", 0, 1, 0.05, () => settings.cloudCover, (v) => (settings.cloudCover = v), (v) => `${Math.round(v * 100)}%`);
+    // FPS cap: discrete steps; the top of the range means uncapped (native refresh).
+    // 0..6 → 30/60/90/120/144/240/uncapped (rAF can't exceed the display refresh).
+    const FPS_STEPS = [30, 60, 90, 120, 144, 240, 0];
+    this.slider(panel, "FPS cap", 0, FPS_STEPS.length - 1, 1,
+      () => Math.max(0, FPS_STEPS.indexOf(settings.fpsCap)),
+      (v) => (settings.fpsCap = FPS_STEPS[v]),
+      (v) => (FPS_STEPS[v] === 0 ? "Uncap" : `${FPS_STEPS[v]}`));
     this.checkbox(panel, "Shadows", () => settings.shadows, (v) => { settings.shadows = v; this.onApply?.(); });
+
+    const reset = document.createElement("button");
+    reset.textContent = "Reset defaults";
+    reset.style.cssText =
+      "margin-top:16px;width:100%;padding:8px;cursor:pointer;border-radius:6px;" +
+      "border:1px solid rgba(248,185,92,0.5);background:rgba(248,185,92,0.12);" +
+      "color:#f8b95c;font:inherit;font-weight:bold;letter-spacing:.5px;";
+    reset.addEventListener("click", () => {
+      resetSettings();
+      for (const r of this.refreshers) r();
+      this.onApply?.();
+    });
+    panel.appendChild(reset);
 
     const hint = document.createElement("div");
     hint.style.cssText = "margin-top:14px;opacity:.55;font-size:11px;";
@@ -79,6 +100,7 @@ export class EscMenu {
     val.style.cssText = "width:48px;text-align:right;opacity:.85;";
     val.textContent = fmt(get());
     input.addEventListener("input", () => { const v = parseFloat(input.value); set(v); val.textContent = fmt(v); });
+    this.refreshers.push(() => { input.value = String(get()); val.textContent = fmt(get()); });
     r.appendChild(input);
     r.appendChild(val);
   }
@@ -90,6 +112,7 @@ export class EscMenu {
     input.checked = get();
     input.style.cssText = "accent-color:#f8b95c;width:18px;height:18px;";
     input.addEventListener("change", () => set(input.checked));
+    this.refreshers.push(() => { input.checked = get(); });
     r.appendChild(input);
   }
 }
