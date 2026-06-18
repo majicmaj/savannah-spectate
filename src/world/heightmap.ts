@@ -54,6 +54,26 @@ export class Heightmap {
     return this.heightAt(x, z) + 1;
   }
 
+  /**
+   * Lowest voxel-column height across an `fp`×`fp` m footprint centered on (x,z).
+   * Mirrors GrassGen.lowest_height_in_footprint: a tuft anchors to the lowest
+   * block it touches so it sinks into a rise instead of floating over a slope.
+   */
+  lowestInFootprint(x: number, z: number, fp: number): number {
+    if (!this.loaded) return VOXEL_WATER_LEVEL;
+    const half = fp * 0.5;
+    const x0 = Math.floor(x - half), x1 = Math.floor(x + half);
+    const z0 = Math.floor(z - half), z1 = Math.floor(z + half);
+    let hMin = this.heightAt(x0, z0);
+    for (let xi = x0; xi <= x1; xi++) {
+      for (let zi = z0; zi <= z1; zi++) {
+        const h = this.heightAt(xi, zi);
+        if (h < hMin) hMin = h;
+      }
+    }
+    return hMin;
+  }
+
   /** Per-column top color [r,g,b] per voxel_mesher._top_color_for. */
   topColor(x: number, z: number): [number, number, number] {
     const h = this.heightAt(x, z);

@@ -55,6 +55,7 @@ export class Water {
         uReflectivity: { value: c.reflectivity },
         uColorDeep: { value: new THREE.Color(c.colorDeep) },
         uColorShallow: { value: new THREE.Color(c.colorShallow) },
+        uSkyColor: { value: new THREE.Color(0x9fc0d8) },
         uSunDir: { value: new THREE.Vector3(0, 1, 0) },
         uSunColor: { value: new THREE.Color(0xfff2d8) },
         uCamPos: { value: new THREE.Vector3() },
@@ -90,7 +91,7 @@ export class Water {
           gl_Position = projectionMatrix * viewMatrix * wp;
         }`,
       fragmentShader: `
-        uniform vec3 uColorDeep, uColorShallow, uSunDir, uSunColor, uCamPos;
+        uniform vec3 uColorDeep, uColorShallow, uSkyColor, uSunDir, uSunColor, uCamPos;
         uniform float uReflectivity, uDaylight, uTime;
         uniform samplerCube uEnvMap;
         varying float vDepth; varying vec3 vWorld; varying vec3 vNormal;
@@ -129,9 +130,10 @@ export class Water {
           float ct = max(dot(N, V), 0.0);
           float fres = 0.02 + 0.98 * pow(1.0 - ct, 5.0);
 
-          // depth color: shallow → deep
+          // depth color: shallow → deep, then tinted 50% toward the current sky color
           float depthT = clamp(vDepth / 4.0, 0.0, 1.0);
           vec3 base = mix(uColorShallow, uColorDeep, depthT);
+          base = mix(base, uSkyColor, 0.5);
 
           // env reflection from the live sky cube
           vec3 R = reflect(-V, N);
@@ -172,12 +174,13 @@ export class Water {
     if (cfg.reflectivity != null) u.uReflectivity.value = cfg.reflectivity;
   }
 
-  update(t: number, cam: THREE.Vector3, sunDir: THREE.Vector3, sunColor: [number, number, number], _skyColor: [number, number, number], daylight = 1): void {
+  update(t: number, cam: THREE.Vector3, sunDir: THREE.Vector3, sunColor: [number, number, number], skyColor: [number, number, number], daylight = 1): void {
     const u = this.mat.uniforms;
     u.uTime.value = t;
     u.uCamPos.value.copy(cam);
     u.uSunDir.value.copy(sunDir);
     u.uSunColor.value.setRGB(sunColor[0], sunColor[1], sunColor[2]);
+    u.uSkyColor.value.setRGB(skyColor[0], skyColor[1], skyColor[2]);
     u.uDaylight.value = daylight;
 
     // snap to integers so the world-locked waves don't swim as we follow the camera

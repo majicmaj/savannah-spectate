@@ -45,6 +45,9 @@ export const GRASS_FULL_HEIGHT_M = 3.0; // tuft height at food=1
 // The game's crossed-quad mesh is 1.6 m wide × 0.8 m tall (2:1) and uniform-scales
 // to ~3 m tall → ~6 m wide. Match that aspect so tufts read as wide bushy clumps.
 export const GRASS_WIDTH_M = 6.0;
+export const GRASS_FOOTPRINT_M = 7.0; // uniform xz footprint; tuft sinks to the lowest block under it
+export const GRASS_VISUAL_MIN_M = 5.0; // smallest cosmetic tuft xz span
+export const GRASS_VISUAL_MAX_M = 8.5; // largest cosmetic tuft xz span
 
 // --- grass recolor (net.gd _grass_color + voxel grass shaders) ---
 // Single source of truth shared by tufts (per-blade, CPU) and ground voxel
