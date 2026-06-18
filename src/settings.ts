@@ -25,6 +25,7 @@ function defaults() {
     dust: true, // kick up dust under running animals
     fireflies: true, // night-time firefly motes
     hitFx: true, // hit-impact burst + floating damage numbers
+    callBubbles: true, // overhead "Hi!/Danger!/..." bubbles when animals vocalize
     waveHeight: 0.22, // water vertex-displacement wave amplitude (m)
     waterReflect: 1.0, // water env-reflection strength 0(matte)..1(mirror)
     fpsCap: 0, // target FPS; 0 = uncapped (renders every animation frame / native refresh)

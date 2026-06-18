@@ -12,6 +12,7 @@ import { Rain } from "./render/rain.js";
 import { Dust } from "./render/dust.js";
 import { Fireflies } from "./render/fireflies.js";
 import { DamageNumbers } from "./render/damage_numbers.js";
+import { CallBubbles } from "./render/call_bubbles.js";
 import { HitJuice } from "./render/hit_juice.js";
 import { CorpseModels } from "./render/corpse_models.js";
 import { Hud } from "./render/hud.js";
@@ -110,6 +111,8 @@ const fireflies = new Fireflies();
 scene.add(fireflies.points);
 const dmgNumbers = new DamageNumbers();
 scene.add(dmgNumbers.group);
+const callBubbles = new CallBubbles();
+scene.add(callBubbles.group);
 
 // Reflection env map: bake the sky dome into a cube texture so the water reflects
 // the live day/night sky (the "HDRI env" the reference uses, but generated from
@@ -366,7 +369,11 @@ function frame(now: number) {
   // audio: music/ambient day-night, calls, hit impacts (+ juice), eating
   const night = dn.daylight < 0.35;
   audio.update(dt, night, camera.position);
-  for (const c of view.consumeCalls()) audio.playCall(c.animal, c.callType, _tmpVec.set(c.x, c.y, c.z));
+  for (const c of view.consumeCalls()) {
+    audio.playCall(c.animal, c.callType, _tmpVec.set(c.x, c.y, c.z));
+    if (settings.callBubbles) callBubbles.spawn(c.x, c.y, c.z, c.callType);
+  }
+  callBubbles.update(dt);
   for (const h of view.consumeHits()) {
     if (settings.hitFx) {
       hitJuice.spawn(h.x, h.y, h.z, h.amount);
