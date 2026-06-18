@@ -8,7 +8,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "tsx src/net/snapshot_codec.test.ts"
+    "test": "tsx src/net/snapshot_codec.test.ts",
+    "prebuild": "node scripts/link-assets.mjs",
+    "predev": "node scripts/link-assets.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.19.43",

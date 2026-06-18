@@ -3,3 +3,9 @@ dist/
 *.log
 .DS_Store
 .vite/
+
+# machine-specific asset symlinks (recreated by scripts/link-assets.mjs)
+public/assets
+public/models
+public/sounds
+public/textures
