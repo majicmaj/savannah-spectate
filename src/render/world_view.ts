@@ -36,7 +36,18 @@ interface Sample { t: number; x: number; y: number; z: number; yaw: number; }
 interface Ent extends RenderEnt {
   buf: Sample[];
   hp: number;
+  hpMax: number;
+  stamina: number;
+  thirst: number;
+  hunger: number;
+  sleep: number;
+  sizeRoll: number;
   seen: boolean;
+}
+
+export interface EntStats {
+  animal: number; size: number; sizeRoll: number;
+  hp: number; hpMax: number; stamina: number; thirst: number; hunger: number; sleep: number;
 }
 
 export interface HitEvent { x: number; y: number; z: number; amount: number; id: number; }
@@ -58,6 +69,7 @@ export class WorldView {
   private suppressed = new Set<number>();
   private hm: Heightmap | null = null;
   private hits: HitEvent[] = [];
+  corpsesExternal = false; // when true, meat.glb models render corpses (skip capsules)
 
   setHeightmap(hm: Heightmap): void {
     this.hm = hm;
@@ -113,6 +125,12 @@ export class WorldView {
         isCorpse: false,
         meat: 1,
         hp: arr[P.HP] as number,
+        hpMax: arr[P.HP_MAX] as number,
+        stamina: arr[P.STAMINA] as number,
+        thirst: arr[P.THIRST] as number,
+        hunger: arr[P.HUNGER] as number,
+        sleep: arr[P.SLEEP_BAR] as number,
+        sizeRoll: arr[P.SIZE_ROLL] as number,
       });
     }
     for (const [cid, c] of snap.c) {
@@ -121,6 +139,7 @@ export class WorldView {
       const cy = this.hm?.loaded ? this.hm.surfaceAt(x, z) : 0; // ground the corpse
       this.pushSample(id, nowMs, x, cy, z, cyaw, -1, size, {
         aiState: 0, sleeping: false, flightMode: 0, isFemale: false, isCorpse: true, meat, hp: 0,
+        hpMax: 0, stamina: 0, thirst: 0, hunger: 0, sleep: 0, sizeRoll: 1,
       });
     }
 
@@ -130,7 +149,10 @@ export class WorldView {
   private pushSample(
     id: number, t: number, x: number, y: number, z: number, yaw: number,
     animal: number, size: number,
-    meta: { aiState: number; sleeping: boolean; flightMode: number; isFemale: boolean; isCorpse: boolean; meat: number; hp: number },
+    meta: {
+      aiState: number; sleeping: boolean; flightMode: number; isFemale: boolean; isCorpse: boolean; meat: number;
+      hp: number; hpMax: number; stamina: number; thirst: number; hunger: number; sleep: number; sizeRoll: number;
+    },
   ): void {
     let e = this.ents.get(id);
     if (!e) {
@@ -138,7 +160,9 @@ export class WorldView {
         id, animal, size, x, y, z, yaw, speed: 0,
         aiState: meta.aiState, sleeping: meta.sleeping, flightMode: meta.flightMode,
         isFemale: meta.isFemale, isCorpse: meta.isCorpse, meat: meta.meat,
-        hp: meta.hp, buf: [{ t, x, y, z, yaw }], seen: true,
+        hp: meta.hp, hpMax: meta.hpMax, stamina: meta.stamina, thirst: meta.thirst,
+        hunger: meta.hunger, sleep: meta.sleep, sizeRoll: meta.sizeRoll,
+        buf: [{ t, x, y, z, yaw }], seen: true,
       };
       this.ents.set(id, e);
       return;
@@ -147,7 +171,8 @@ export class WorldView {
     if (!meta.isCorpse && meta.hp < e.hp - 0.5 && meta.hp > 0) {
       this.hits.push({ x, y: y + size * 0.6, z, amount: e.hp - meta.hp, id });
     }
-    e.hp = meta.hp;
+    e.hp = meta.hp; e.hpMax = meta.hpMax; e.stamina = meta.stamina; e.thirst = meta.thirst;
+    e.hunger = meta.hunger; e.sleep = meta.sleep; e.sizeRoll = meta.sizeRoll;
     e.animal = animal; e.size = size;
     e.aiState = meta.aiState; e.sleeping = meta.sleeping; e.flightMode = meta.flightMode;
     e.isFemale = meta.isFemale; e.isCorpse = meta.isCorpse; e.meat = meta.meat;
@@ -179,6 +204,7 @@ export class WorldView {
       this.dummy.position.set(e.x, e.y, e.z);
       this.dummy.rotation.set(0, e.yaw, 0);
       if (e.isCorpse) {
+        if (this.corpsesExternal) continue; // meat.glb models handle corpses
         const s = Math.max(0.3, e.size);
         this.dummy.scale.set(s, s * 0.5, s);
         this.dummy.updateMatrix();
@@ -248,6 +274,14 @@ export class WorldView {
   getEntityInfo(id: number): { animal: number; size: number; isCorpse: boolean } | null {
     const e = this.ents.get(id);
     return e ? { animal: e.animal, size: e.size, isCorpse: e.isCorpse } : null;
+  }
+  getStats(id: number): EntStats | null {
+    const e = this.ents.get(id);
+    if (!e || e.isCorpse) return null;
+    return {
+      animal: e.animal, size: e.size, sizeRoll: e.sizeRoll,
+      hp: e.hp, hpMax: e.hpMax, stamina: e.stamina, thirst: e.thirst, hunger: e.hunger, sleep: e.sleep,
+    };
   }
   liveIds(): number[] {
     const out: number[] = [];

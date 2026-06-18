@@ -75,6 +75,11 @@ export const ANIMAL_MODELS: Record<number, string> = {
 };
 export const LIONESS_MODEL = "models/lioness.glb";
 
+// per-species baby/adult size (m) for the growth bar (ANIMAL_STATS).
+// growth = clamp((size - baby*roll) / ((adult-baby)*roll), 0, 1)
+export const ANIMAL_BABY_SIZE = [0.5, 0.6, 0.4, 0.3, 0.5, 0.4, 0.25, 0.4];
+export const ANIMAL_ADULT_SIZE = [2.5, 7.5, 1.5, 6.0, 2.5, 2.0, 2.0, 1.8];
+
 // animal id -> placeholder color [r,g,b] 0..1 (constants.gd:6146 ANIMAL_COLORS)
 export const ANIMAL_COLORS: [number, number, number][] = [
   [0.93, 0.55, 0.18], // lion

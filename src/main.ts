@@ -7,6 +7,8 @@ import { Terrain } from "./render/terrain.js";
 import { Grass } from "./render/grass.js";
 import { Trees } from "./render/trees.js";
 import { HitJuice } from "./render/hit_juice.js";
+import { CorpseModels } from "./render/corpse_models.js";
+import { Hud } from "./render/hud.js";
 import { Heightmap } from "./world/heightmap.js";
 import { computeDayNight, CYCLE_SECONDS } from "./world/daynight.js";
 import {
@@ -80,6 +82,12 @@ const trees = new Trees();
 scene.add(trees.group);
 const hitJuice = new HitJuice();
 scene.add(hitJuice.group);
+const corpseModels = new CorpseModels();
+scene.add(corpseModels.group);
+corpseModels.load().then(() => (view.corpsesExternal = true)).catch((e) => console.error("[corpse] load", e));
+const bottomHud = new Hud();
+const helpEl = document.getElementById("help") as HTMLDivElement;
+let hudsVisible = true;
 const heightmap = new Heightmap();
 const spectate = new SpectateCamera(camera);
 const lastCenter = new THREE.Vector3(0, VOXEL_HEIGHT_BASE, 0);
@@ -112,6 +120,12 @@ client.connect();
 
 window.addEventListener("keydown", (e) => {
   if (e.key === "r" || e.key === "R") spectate.random(view);
+  else if (e.key === "h" || e.key === "H") {
+    hudsVisible = !hudsVisible;
+    bottomHud.setVisible(hudsVisible);
+    hud.style.display = hudsVisible ? "" : "none";
+    helpEl.style.display = hudsVisible ? "" : "none";
+  }
   else if (e.key === "[") spectate.step(view, -1);
   else if (e.key === "]") spectate.step(view, +1);
   else if (e.key === "ArrowLeft") { spectate.arrows.left = true; e.preventDefault(); }
@@ -172,8 +186,10 @@ function frame(now: number) {
   grass.update(targetPos);
   spectate.update(dt, view);
   grass.updateAlpha(camera.position, targetPos); // fade grass off the subject
+  if (corpseModels.loaded) corpseModels.update(view.entities().filter((e) => e.isCorpse));
   for (const h of view.consumeHits()) hitJuice.spawn(h.x, h.y, h.z, h.amount);
   hitJuice.update(dt);
+  bottomHud.update(tid != null ? view.getStats(tid) : null, tid != null ? `#${tid}` : "");
 
   // day/night — extrapolate time-of-day, drive sun/moon/sky/fog/ambient
   const tNorm = ((((timeOfDay + (now - timeRecvAt) / 1000) % CYCLE_SECONDS) / CYCLE_SECONDS) + 1) % 1;
