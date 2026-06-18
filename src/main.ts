@@ -18,7 +18,7 @@ import { settings } from "./settings.js";
 import { Heightmap } from "./world/heightmap.js";
 import { computeDayNight, CYCLE_SECONDS } from "./world/daynight.js";
 import {
-  WORLD_SIZE, SPECIES_LABELS, SPECTATE_GATEWAY_PORT, SPECTATE_GATEWAY_WSS, RENDER_RADIUS_M, VOXEL_HEIGHT_BASE,
+  WORLD_SIZE, SPECIES_LABELS, AI_STATE_LABELS, SPECTATE_GATEWAY_PORT, SPECTATE_GATEWAY_WSS, RENDER_RADIUS_M, VOXEL_HEIGHT_BASE,
 } from "./world/constants.js";
 
 function gatewayUrl(): string {
@@ -117,7 +117,6 @@ scene.add(corpseModels.group);
 corpseModels.load().then(() => (view.corpsesExternal = true)).catch((e) => console.error("[corpse] load", e));
 const bottomHud = new Hud();
 const helpEl = document.getElementById("help") as HTMLDivElement;
-let hudsVisible = true;
 
 const escMenu = new EscMenu();
 function applySettings() {
@@ -126,6 +125,10 @@ function applySettings() {
   camera.updateProjectionMatrix();
   renderer.shadowMap.enabled = settings.shadows;
   water.config({ waveHeight: settings.waveHeight, reflectivity: settings.waterReflect });
+  // HUD overlay visibility (top-left stats, bottom-right hint, bottom vitals bar)
+  hud.style.display = settings.showStats ? "" : "none";
+  helpEl.style.display = settings.showHelp ? "" : "none";
+  bottomHud.setVisible(settings.showVitals);
   if (scene.fog) { (scene.fog as THREE.Fog).near = settings.renderRadiusM * 0.55; (scene.fog as THREE.Fog).far = settings.renderRadiusM; }
 }
 escMenu.onApply = applySettings;
@@ -180,10 +183,10 @@ window.addEventListener("keydown", (e) => {
   if (e.key === "Escape") escMenu.toggle();
   else if (e.key === "r" || e.key === "R") spectate.random(view);
   else if (e.key === "h" || e.key === "H") {
-    hudsVisible = !hudsVisible;
-    bottomHud.setVisible(hudsVisible);
-    hud.style.display = hudsVisible ? "" : "none";
-    helpEl.style.display = hudsVisible ? "" : "none";
+    // quick-toggle the top-left debug stats; keep the menu checkbox in sync
+    settings.showStats = !settings.showStats;
+    applySettings();
+    escMenu.refresh();
   }
   else if (e.key === "[") spectate.step(view, -1);
   else if (e.key === "]") spectate.step(view, +1);
@@ -259,10 +262,20 @@ function frame(now: number) {
   grass.updateAlpha(camera.position, targetPos); // fade grass off the subject
   if (corpseModels.loaded) corpseModels.update(view.entities().filter((e) => e.isCorpse));
   hitJuice.update(dt);
-  bottomHud.update(tid != null ? view.getStats(tid) : null, tid != null ? `#${tid}` : "");
+
+  // live in-game clock + day phase (drives day/night below + the bottom HUD)
+  const tNorm = ((((timeOfDay + (now - timeRecvAt) / 1000) % CYCLE_SECONDS) / CYCLE_SECONDS) + 1) % 1;
+  const hh24 = tNorm * 24, hh = Math.floor(hh24) % 24, mm = Math.floor((hh24 - Math.floor(hh24)) * 60);
+  const clock = `${hh.toString().padStart(2, "0")}:${mm.toString().padStart(2, "0")}`;
+  const phase = tNorm < 0.24 || tNorm >= 0.85 ? "Night" : tNorm < 0.32 ? "Dawn" : tNorm < 0.70 ? "Day" : tNorm < 0.78 ? "Dusk" : "Night";
+  // bottom HUD: species name + live "<state> · <clock> <phase>" status
+  const binfo = tid != null ? view.getEntityInfo(tid) : null;
+  const aiLabel = binfo && !binfo.isCorpse ? (AI_STATE_LABELS[binfo.aiState] ?? "") : "";
+  const bName = binfo ? (binfo.isCorpse ? "Carcass" : (SPECIES_LABELS[binfo.animal] ?? "Animal")) : "";
+  const bStatus = [aiLabel, `${clock} ${phase}`].filter(Boolean).join("   ·   ");
+  bottomHud.update(tid != null ? view.getStats(tid) : null, bName, bStatus);
 
   // day/night — extrapolate time-of-day, drive sun/moon/sky/fog/ambient
-  const tNorm = ((((timeOfDay + (now - timeRecvAt) / 1000) % CYCLE_SECONDS) / CYCLE_SECONDS) + 1) % 1;
   const dn = computeDayNight(tNorm);
   const anchor = targetPos ?? new THREE.Vector3(0, VOXEL_HEIGHT_BASE, 0);
   sun.color.setRGB(dn.sunColor[0], dn.sunColor[1], dn.sunColor[2]);
@@ -331,24 +344,22 @@ function frame(now: number) {
   fpsAccum += dt; fpsFrames++;
   if (fpsAccum >= 0.5) { fps = fpsFrames / fpsAccum; fpsAccum = 0; fpsFrames = 0; }
 
-  const info = tid != null ? view.getEntityInfo(tid) : null;
-  const targetLabel =
-    info && !info.isCorpse ? `${SPECIES_LABELS[info.animal] ?? "?"} #${tid} (size ${info.size.toFixed(1)})` : "—";
-  const fresh = client.lastSnapshotAt && now - client.lastSnapshotAt < 1000;
-  // time-of-day clock from the normalized cycle fraction (0 = midnight, 0.5 = noon)
-  const hh24 = tNorm * 24;
-  const hh = Math.floor(hh24) % 24;
-  const mm = Math.floor((hh24 - Math.floor(hh24)) * 60);
-  const clock = `${hh.toString().padStart(2, "0")}:${mm.toString().padStart(2, "0")}`;
-  // "net" = age of the most recent snapshot (ms). No true RTT — the gateway is
-  // push-only, so this is liveness, not round-trip latency.
-  const netMs = client.lastSnapshotAt ? Math.max(0, Math.round(now - client.lastSnapshotAt)) : 0;
-  hud.textContent =
-    `${status}${fresh ? "" : " (stale)"}  ${(client.bytesPerSec / 1024).toFixed(1)} KB/s  ${modelStatus}\n` +
-    `${terrainStatus}  chunks ${terrain.chunkCount()}  grass ${grass.count()}\n` +
-    `entities ${view.count()}   models ${models.activeCount()}   FPS ${fps.toFixed(0)}\n` +
-    `loc ${anchor.x.toFixed(0)}, ${anchor.z.toFixed(0)}   ${clock}   net ${netMs} ms\n` +
-    `target ${targetLabel}`;
+  // top-left debug stats — only built when shown (toggle: Esc → HUD, or H key).
+  // "net" = age of the most recent snapshot (ms); the gateway is push-only, so
+  // it's liveness, not true RTT.
+  if (settings.showStats) {
+    const fresh = client.lastSnapshotAt && now - client.lastSnapshotAt < 1000;
+    const netMs = client.lastSnapshotAt ? Math.max(0, Math.round(now - client.lastSnapshotAt)) : 0;
+    const targetLabel = binfo && !binfo.isCorpse
+      ? `${SPECIES_LABELS[binfo.animal] ?? "?"} #${tid} (size ${binfo.size.toFixed(1)})${aiLabel ? ` · ${aiLabel}` : ""}`
+      : "—";
+    hud.textContent =
+      `${status}${fresh ? "" : " (stale)"}  ${(client.bytesPerSec / 1024).toFixed(1)} KB/s  ${modelStatus}\n` +
+      `${terrainStatus}  chunks ${terrain.chunkCount()}  grass ${grass.count()}\n` +
+      `entities ${view.count()}   models ${models.activeCount()}   FPS ${fps.toFixed(0)}\n` +
+      `loc ${anchor.x.toFixed(0)}, ${anchor.z.toFixed(0)}   ${clock} ${phase}   net ${netMs} ms\n` +
+      `target ${targetLabel}`;
+  }
 
   // VSync off: free-run via timer. Pace to the FPS cap if set (delay = remaining
   // time to the next target frame, measured after this frame's work), else ASAP

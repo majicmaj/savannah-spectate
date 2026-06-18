@@ -10,6 +10,10 @@ function defaults() {
     musicVol: 0.45,
     sfxVol: 0.9,
     ambientVol: 0.6,
+    // HUD overlays (off by default for a clean view; toggled in the Esc menu)
+    showStats: false, // top-left debug text (#hud)
+    showHelp: false, // bottom-right hint line (#help)
+    showVitals: true, // bottom-center target vitals bar
     // visual
     chunkRadius: CHUNK_RENDER_RADIUS, // terrain chunk render radius (chunks)
     renderRadiusM: RENDER_RADIUS_M, // grass/cull/fog radius (m)

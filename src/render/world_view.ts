@@ -290,9 +290,9 @@ export class WorldView {
   getRenderYaw(id: number): number {
     return this.ents.get(id)?.yaw ?? 0;
   }
-  getEntityInfo(id: number): { animal: number; size: number; isCorpse: boolean } | null {
+  getEntityInfo(id: number): { animal: number; size: number; isCorpse: boolean; aiState: number } | null {
     const e = this.ents.get(id);
-    return e ? { animal: e.animal, size: e.size, isCorpse: e.isCorpse } : null;
+    return e ? { animal: e.animal, size: e.size, isCorpse: e.isCorpse, aiState: e.aiState } : null;
   }
   getStats(id: number): EntStats | null {
     const e = this.ents.get(id);

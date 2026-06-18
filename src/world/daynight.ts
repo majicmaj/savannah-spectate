@@ -10,22 +10,24 @@ export const CYCLE_SECONDS = 360.0; // DAY_SECONDS 180 + NIGHT_SECONDS 180
 const TAU = Math.PI * 2;
 
 type C = [number, number, number];
-const SUN_DAY: C = [1.0, 0.97, 0.92];
-const SUN_DUSK: C = [1.0, 0.5, 0.18];
-// Horizon (fog) band. Day = warm pale haze; dusk = orange→mauve; night = deep blue.
-const SKY_FOG_DAY: C = [0.74, 0.85, 0.98];
-const SKY_FOG_DUSK: C = [0.62, 0.4, 0.34];
-const SKY_FOG_NIGHT: C = [0.05, 0.08, 0.2];
-const AMBIENT_DAY: C = [0.82, 0.78, 0.66];
-// Night ambient pushed bluer/cooler so the world reads as moonlit, not grey.
-const AMBIENT_NIGHT: C = [0.24, 0.32, 0.62];
-const MOON_ZENITH: C = [0.62, 0.74, 1.1];
-const MOON_HORIZON: C = [0.88, 0.82, 0.96];
-// sky-dome top (zenith) colors. Day = deep saturated blue; dusk = mauve;
-// night = near-black indigo for a real night feel.
-const SKY_TOP_DAY: C = [0.24, 0.49, 0.88];
-const SKY_TOP_DUSK: C = [0.42, 0.28, 0.44];
-const SKY_TOP_NIGHT: C = [0.012, 0.025, 0.1];
+const SUN_DAY: C = [1.0, 0.97, 0.9];
+const SUN_DUSK: C = [1.0, 0.46, 0.15]; // deep orange sunset disk
+// Horizon (fog) band — this IS the fog color, so terrain fades into the sky.
+// Day = pale blue haze; dusk = vivid sunset orange; night = dim blue glow.
+const SKY_FOG_DAY: C = [0.72, 0.83, 0.93];
+const SKY_FOG_DUSK: C = [0.93, 0.5, 0.29];
+const SKY_FOG_NIGHT: C = [0.05, 0.08, 0.17];
+const AMBIENT_DAY: C = [0.84, 0.8, 0.68];
+// Night ambient: cool moonlit blue, not grey.
+const AMBIENT_NIGHT: C = [0.22, 0.3, 0.6];
+const MOON_ZENITH: C = [0.64, 0.76, 1.12];
+const MOON_HORIZON: C = [0.9, 0.84, 0.98];
+// sky-dome zenith (top) colors. Day = rich sky blue; dusk = twilight blue-violet
+// (so the orange horizon → violet top gradient reads as a real sunset); night =
+// near-black navy for a true night feel.
+const SKY_TOP_DAY: C = [0.21, 0.45, 0.85];
+const SKY_TOP_DUSK: C = [0.3, 0.26, 0.48];
+const SKY_TOP_NIGHT: C = [0.014, 0.03, 0.1];
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 function smoothstep(e0: number, e1: number, x: number): number {

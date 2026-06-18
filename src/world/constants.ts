@@ -73,6 +73,35 @@ export const GRASS_WET_MID: [number, number, number] = [0.56, 1.005, 0.26];
 export const INTERP_DELAY_MS = 125;
 
 // Spectator gateway listens here (separate from the game's WebSocketMultiplayerPeer).
+// Per-entity AI state code → human label (port of constants.gd AI_STATE_LABELS,
+// keyed by the snapshot ai_state_code byte). Index = entity.aiState.
+export const AI_STATE_LABELS: string[] = [
+  "",                  // 0 default
+  "Wandering",         // 1
+  "Watching",          // 2
+  "Hunting",           // 3
+  "Feasting",          // 4
+  "Retreating",        // 5
+  "Fleeing",           // 6
+  "Retaliating",       // 7
+  "Defending herd",    // 8
+  "Ambushing",         // 9
+  "Lying in wait",     // 10
+  "Returning to water",// 11
+  "Drinking",          // 12
+  "Basking in the sun",// 13
+  "Sleeping",          // 14
+  "Passed out",        // 15
+  "Grazing",           // 16
+  "Scouting",          // 17
+  "Encircling",        // 18
+  "Closing in",        // 19
+  "Attacking",         // 20
+  "Scavenging",        // 21
+  "Lost sight",        // 22
+  "Enraged",           // 23
+];
+
 export const SPECTATE_GATEWAY_PORT = 8091;
 // Production gateway endpoint (WSS via the cloudflared tunnel). Used when the
 // viewer is served over https; local dev still uses ws://<host>:8091.

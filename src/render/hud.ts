@@ -21,18 +21,23 @@ const BARS: { key: string; label: string; color: string }[] = [
 export class Hud {
   private root: HTMLDivElement;
   private title: HTMLDivElement;
+  private subtitle: HTMLDivElement;
   private bars: Bar[] = [];
 
   constructor() {
     const root = document.createElement("div");
     root.style.cssText =
       "position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:9;" +
-      "display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none;" +
+      "display:flex;flex-direction:column;align-items:center;gap:3px;pointer-events:none;" +
       "font:12px/1.3 ui-monospace,Menlo,monospace;color:#f3e9dd;text-shadow:0 1px 2px #000a;";
     const title = document.createElement("div");
-    title.style.cssText = "font-weight:bold;letter-spacing:0.5px;";
+    title.style.cssText = "font-weight:bold;letter-spacing:0.5px;font-size:14px;";
     root.appendChild(title);
     this.title = title;
+    const subtitle = document.createElement("div");
+    subtitle.style.cssText = "font-size:11px;opacity:0.8;margin-bottom:3px;letter-spacing:0.3px;";
+    root.appendChild(subtitle);
+    this.subtitle = subtitle;
 
     const rowEl = document.createElement("div");
     rowEl.style.cssText = "display:flex;gap:8px;";
@@ -66,13 +71,15 @@ export class Hud {
     this.root.style.display = v ? "flex" : "none";
   }
 
-  update(stats: EntStats | null, idLabel: string): void {
+  update(stats: EntStats | null, name: string, status: string): void {
     if (!stats) {
       this.title.textContent = "—";
+      this.subtitle.textContent = "";
       for (const b of this.bars) { b.fill.style.width = "0%"; b.pct.textContent = ""; }
       return;
     }
-    this.title.textContent = `${SPECIES_LABELS[stats.animal] ?? "?"} ${idLabel}`;
+    this.title.textContent = name || (SPECIES_LABELS[stats.animal] ?? "?");
+    this.subtitle.textContent = status;
     const vals: Record<string, number> = {
       health: stats.hpMax > 0 ? stats.hp / stats.hpMax : 0,
       stamina: stats.stamina,
