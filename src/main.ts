@@ -11,6 +11,7 @@ import { Sky } from "./render/sky.js";
 import { Rain } from "./render/rain.js";
 import { Dust } from "./render/dust.js";
 import { Fireflies } from "./render/fireflies.js";
+import { DamageNumbers } from "./render/damage_numbers.js";
 import { HitJuice } from "./render/hit_juice.js";
 import { CorpseModels } from "./render/corpse_models.js";
 import { Hud } from "./render/hud.js";
@@ -103,6 +104,8 @@ const dust = new Dust();
 scene.add(dust.group);
 const fireflies = new Fireflies();
 scene.add(fireflies.points);
+const dmgNumbers = new DamageNumbers();
+scene.add(dmgNumbers.group);
 
 // Reflection env map: bake the sky dome into a cube texture so the water reflects
 // the live day/night sky (the "HDRI env" the reference uses, but generated from
@@ -346,9 +349,13 @@ function frame(now: number) {
   audio.update(dt, night, camera.position);
   for (const c of view.consumeCalls()) audio.playCall(c.animal, c.callType, _tmpVec.set(c.x, c.y, c.z));
   for (const h of view.consumeHits()) {
-    hitJuice.spawn(h.x, h.y, h.z, h.amount);
+    if (settings.hitFx) {
+      hitJuice.spawn(h.x, h.y, h.z, h.amount);
+      dmgNumbers.spawn(h.x, h.y + 0.4, h.z, h.amount);
+    }
     audio.playHit(_tmpVec.set(h.x, h.y, h.z), Math.min(1, h.amount / 8));
   }
+  dmgNumbers.update(dt);
   eatTimer += dt;
   if (eatTimer > 0.5 && targetPos) {
     eatTimer = 0;

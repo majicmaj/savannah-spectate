@@ -72,6 +72,7 @@ export class EscMenu {
     const fx = this.section("Effects");
     this.checkbox(fx, "Run dust", () => settings.dust, (v) => (settings.dust = v));
     this.checkbox(fx, "Fireflies", () => settings.fireflies, (v) => (settings.fireflies = v));
+    this.checkbox(fx, "Hit FX", () => settings.hitFx, (v) => (settings.hitFx = v));
 
     // ---- Water -------------------------------------------------------------
     const water = this.section("Water");
