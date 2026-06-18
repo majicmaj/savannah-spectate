@@ -22,6 +22,7 @@ function defaults() {
     cloudCover: 0.5, // manual sky cloud coverage 0(clear)..1(overcast) when weatherClouds is off
     weatherClouds: true, // drive cloud cover from the live weather (wetness/rain) instead of the slider
     rain: true, // render rain when the weather reports precipitation
+    dust: true, // kick up dust under running animals
     waveHeight: 0.22, // water vertex-displacement wave amplitude (m)
     waterReflect: 1.0, // water env-reflection strength 0(matte)..1(mirror)
     fpsCap: 0, // target FPS; 0 = uncapped (renders every animation frame / native refresh)

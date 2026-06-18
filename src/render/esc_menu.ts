@@ -68,6 +68,10 @@ export class EscMenu {
     this.slider(env, "Clouds", 0, 1, 0.05, () => settings.cloudCover, (v) => (settings.cloudCover = v), (v) => `${Math.round(v * 100)}%`);
     this.checkbox(env, "Rain", () => settings.rain, (v) => (settings.rain = v));
 
+    // ---- Effects -----------------------------------------------------------
+    const fx = this.section("Effects");
+    this.checkbox(fx, "Run dust", () => settings.dust, (v) => (settings.dust = v));
+
     // ---- Water -------------------------------------------------------------
     const water = this.section("Water");
     this.slider(water, "Waves", 0, 0.6, 0.02, () => settings.waveHeight,

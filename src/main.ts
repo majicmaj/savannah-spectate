@@ -9,6 +9,7 @@ import { Trees } from "./render/trees.js";
 import { Water } from "./render/water.js";
 import { Sky } from "./render/sky.js";
 import { Rain } from "./render/rain.js";
+import { Dust } from "./render/dust.js";
 import { HitJuice } from "./render/hit_juice.js";
 import { CorpseModels } from "./render/corpse_models.js";
 import { Hud } from "./render/hud.js";
@@ -92,6 +93,8 @@ const sky = new Sky(camera.far * 0.95);
 scene.add(sky.mesh);
 const rain = new Rain();
 scene.add(rain.mesh);
+const dust = new Dust();
+scene.add(dust.group);
 
 // Reflection env map: bake the sky dome into a cube texture so the water reflects
 // the live day/night sky (the "HDRI env" the reference uses, but generated from
@@ -262,6 +265,14 @@ function frame(now: number) {
   grass.updateAlpha(camera.position, targetPos); // fade grass off the subject
   if (corpseModels.loaded) corpseModels.update(view.entities().filter((e) => e.isCorpse));
   hitJuice.update(dt);
+  // run dust: emit under fast-moving animals near the camera, then age the pool
+  if (settings.dust) {
+    for (const e of view.entities()) {
+      if (e.isCorpse) continue;
+      dust.emit(dt, e.x, e.y, e.z, Math.max(0.5, e.size), e.speed, e.yaw);
+    }
+  }
+  dust.update(dt);
 
   // live in-game clock + day phase (drives day/night below + the bottom HUD)
   const tNorm = ((((timeOfDay + (now - timeRecvAt) / 1000) % CYCLE_SECONDS) / CYCLE_SECONDS) + 1) % 1;
