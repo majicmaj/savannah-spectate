@@ -54,6 +54,12 @@ export class EscMenu {
     this.checkbox(panel, "VSync", () => settings.vsync, (v) => (settings.vsync = v));
     this.checkbox(panel, "Shadows", () => settings.shadows, (v) => { settings.shadows = v; this.onApply?.(); });
 
+    section("Water");
+    this.slider(panel, "Waves", 0, 0.6, 0.02, () => settings.waveHeight,
+      (v) => { settings.waveHeight = v; this.onApply?.(); }, (v) => `${v.toFixed(2)}`);
+    this.slider(panel, "Reflection", 0, 1, 0.05, () => settings.waterReflect,
+      (v) => { settings.waterReflect = v; this.onApply?.(); }, (v) => `${Math.round(v * 100)}%`);
+
     const reset = document.createElement("button");
     reset.textContent = "Reset defaults";
     reset.style.cssText =

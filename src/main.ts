@@ -87,6 +87,22 @@ const water = new Water();
 scene.add(water.mesh);
 const sky = new Sky(camera.far * 0.95);
 scene.add(sky.mesh);
+
+// Reflection env map: bake the sky dome into a cube texture so the water reflects
+// the live day/night sky (the "HDRI env" the reference uses, but generated from
+// our own procedural sky → reflections always match what's overhead). The sky is
+// put on render layer 1; a CubeCamera that sees ONLY layer 1 captures sky-only
+// (no terrain/animals) cheaply. Rebaked a few times a second — the sky drifts slowly.
+const SKY_LAYER = 1;
+sky.mesh.layers.enable(SKY_LAYER); // still drawn on layer 0 for the main camera
+const envRT = new THREE.WebGLCubeRenderTarget(256, {
+  generateMipmaps: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+});
+const envCam = new THREE.CubeCamera(0.5, 4000, envRT);
+envCam.layers.set(SKY_LAYER);
+water.setEnvMap(envRT.texture);
+let lastEnvBake = -1;
+
 const trees = new Trees();
 scene.add(trees.group);
 const hitJuice = new HitJuice();
@@ -104,6 +120,7 @@ function applySettings() {
   camera.far = settings.renderRadiusM + 140;
   camera.updateProjectionMatrix();
   renderer.shadowMap.enabled = settings.shadows;
+  water.config({ waveHeight: settings.waveHeight, reflectivity: settings.waterReflect });
   if (scene.fog) { (scene.fog as THREE.Fog).near = settings.renderRadiusM * 0.55; (scene.fog as THREE.Fog).far = settings.renderRadiusM; }
 }
 escMenu.onApply = applySettings;
@@ -254,9 +271,11 @@ function frame(now: number) {
   (scene.background as THREE.Color).setRGB(dn.skyColor[0], dn.skyColor[1], dn.skyColor[2]);
   scene.fog!.color.setRGB(dn.fogColor[0], dn.fogColor[1], dn.fogColor[2]);
 
-  water.update(now / 1000, camera.position, dn.sunDir, dn.sunColor, dn.skyColor);
+  water.update(now / 1000, camera.position, dn.sunDir, dn.sunColor, dn.skyColor, dn.daylight);
   // sky dome: zenith = sky color, horizon = fog color (so terrain edge blends in)
   sky.update(now / 1000, camera.position, dn.sunDir, dn.sunColor, dn.skyColor, dn.fogColor, dn.daylight, settings.cloudCover);
+  // rebake the sky→cube env for water reflections (sky is positioned above, so bake after its update)
+  if (now - lastEnvBake > 400) { envCam.position.copy(camera.position); envCam.update(renderer, scene); lastEnvBake = now; }
 
   // audio: music/ambient day-night, calls, hit impacts (+ juice), eating
   const night = dn.daylight < 0.35;

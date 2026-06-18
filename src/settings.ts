@@ -16,6 +16,8 @@ function defaults() {
     fov: 60,
     shadows: true,
     cloudCover: 0.5, // sky cloud coverage 0(clear)..1(overcast)
+    waveHeight: 0.22, // water vertex-displacement wave amplitude (m)
+    waterReflect: 1.0, // water env-reflection strength 0(matte)..1(mirror)
     fpsCap: 0, // target FPS; 0 = uncapped (renders every animation frame / native refresh)
     vsync: true, // true → rAF (locked to display refresh); false → timer loop (free-run, paced by fpsCap)
   };
