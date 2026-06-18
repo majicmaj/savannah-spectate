@@ -10,6 +10,7 @@ import { Water } from "./render/water.js";
 import { Sky } from "./render/sky.js";
 import { Rain } from "./render/rain.js";
 import { Dust } from "./render/dust.js";
+import { Fireflies } from "./render/fireflies.js";
 import { HitJuice } from "./render/hit_juice.js";
 import { CorpseModels } from "./render/corpse_models.js";
 import { Hud } from "./render/hud.js";
@@ -29,6 +30,11 @@ function gatewayUrl(): string {
   if (location.protocol === "https:") return SPECTATE_GATEWAY_WSS;
   const host = location.hostname || "localhost";
   return `ws://${host}:${SPECTATE_GATEWAY_PORT}`;
+}
+
+function smoothstep01(e0: number, e1: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
 }
 
 const canvas = document.getElementById("app") as HTMLCanvasElement;
@@ -95,6 +101,8 @@ const rain = new Rain();
 scene.add(rain.mesh);
 const dust = new Dust();
 scene.add(dust.group);
+const fireflies = new Fireflies();
+scene.add(fireflies.points);
 
 // Reflection env map: bake the sky dome into a cube texture so the water reflects
 // the live day/night sky (the "HDRI env" the reference uses, but generated from
@@ -166,6 +174,7 @@ client.onHeightmap = (payload) => {
   terrain.setHeightmap(heightmap);
   grass.setHeightmap(heightmap);
   water.setHeightmap(heightmap);
+  fireflies.setHeightmap(heightmap);
   view.setHeightmap(heightmap); // ground corpses on the terrain
   terrainStatus = `terrain ${heightmap.W}×${heightmap.H}`;
   ground.visible = false; // real terrain takes over
@@ -317,6 +326,9 @@ function frame(now: number) {
   // rain follows the weather `rain` field; wind drift reuses the sun azimuth for a slant
   rain.setIntensity(weatherRain);
   rain.update(now / 1000, camera.position, dn.sunDir.x, dn.sunDir.z, settings.rain);
+  // fireflies fade in at dusk (daylight 0.42 → 0.16 = full), like the game
+  const nightFactor = settings.fireflies ? 1 - smoothstep01(0.16, 0.42, dn.daylight) : 0;
+  fireflies.update(now / 1000, camera.position, nightFactor);
 
   // shared wind: slowly drifting direction + a gust envelope (stronger when raining),
   // driving grass + tree sway so the whole field leans coherently.
