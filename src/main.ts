@@ -165,6 +165,7 @@ client.onHeightmap = (payload) => {
 // live weather (smoothed toward each snapshot so cloud cover / rain ease in/out)
 let weatherRain = 0;
 let weatherWetness = 0;
+const windDir = new THREE.Vector2(1, 0); // shared grass/tree sway direction
 client.onSnapshot = (snap) => {
   view.applySnapshot(snap, performance.now());
   spectate.ensureTarget(view);
@@ -290,6 +291,15 @@ function frame(now: number) {
   // rain follows the weather `rain` field; wind drift reuses the sun azimuth for a slant
   rain.setIntensity(weatherRain);
   rain.update(now / 1000, camera.position, dn.sunDir.x, dn.sunDir.z, settings.rain);
+
+  // shared wind: slowly drifting direction + a gust envelope (stronger when raining),
+  // driving grass + tree sway so the whole field leans coherently.
+  const wAng = Math.sin(now * 0.00004) * Math.PI;
+  windDir.set(Math.cos(wAng), Math.sin(wAng));
+  const gust = 0.5 + 0.5 * Math.sin(now * 0.0011) * Math.sin(now * 0.00037 + 1.3);
+  const windStr = (0.55 + 0.8 * Math.max(0, gust)) * (1 + weatherRain * 0.7);
+  grass.setWind(now / 1000, windDir, windStr);
+  trees.setWind(now / 1000, windDir, windStr);
   // rebake the sky→cube env for water reflections (sky is positioned above, so bake after its update)
   if (now - lastEnvBake > 400) { envCam.position.copy(camera.position); envCam.update(renderer, scene); lastEnvBake = now; }
 

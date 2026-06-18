@@ -134,6 +134,12 @@ export class Grass {
   private posXZ = new Float32Array(CAP * 2); // active instance world x,z (for alpha)
   private alphaAttr: THREE.InstancedBufferAttribute;
   private n = 0;
+  // shared wind uniforms (wired into the material in onBeforeCompile)
+  private wind = {
+    uTime: { value: 0 },
+    uWindDir: { value: new THREE.Vector2(1, 0) },
+    uWindStr: { value: 0.8 },
+  };
 
   constructor() {
     // near-tier clump: 3 planes × 2 sub-tufts (game's closest LOD spec)
@@ -150,11 +156,33 @@ export class Grass {
     const mat = new THREE.MeshToonMaterial({
       map: tex, alphaTest: 0.2, side: THREE.DoubleSide, color: 0xffffff, transparent: true,
     });
-    // per-instance alpha: multiply diffuse alpha by instAlpha
+    // per-instance alpha (fade off the subject) + wind sway (tips lean downwind,
+    // base fixed — a simplified port of grass_sway.gdshader). uTime/uWind* are
+    // shared uniform refs updated each frame by setWind().
     mat.onBeforeCompile = (shader) => {
-      shader.vertexShader = "attribute float instAlpha;\nvarying float vInstAlpha;\n" + shader.vertexShader;
+      shader.uniforms.uTime = this.wind.uTime;
+      shader.uniforms.uWindDir = this.wind.uWindDir;
+      shader.uniforms.uWindStr = this.wind.uWindStr;
+      shader.vertexShader =
+        "attribute float instAlpha;\nvarying float vInstAlpha;\nuniform float uTime, uWindStr;\nuniform vec2 uWindDir;\n" +
+        shader.vertexShader;
       shader.vertexShader = shader.vertexShader.replace(
-        "#include <begin_vertex>", "#include <begin_vertex>\n  vInstAlpha = instAlpha;");
+        "#include <begin_vertex>",
+        `#include <begin_vertex>
+  vInstAlpha = instAlpha;
+  {
+    float _sx = length(instanceMatrix[0].xyz);
+    float _sy = length(instanceMatrix[1].xyz);
+    vec3 _iwp = instanceMatrix[3].xyz;                       // instance world origin
+    float _hf = clamp(transformed.y / 0.85, 0.0, 1.0);       // 0 at base → 1 at tip
+    float _ph = dot(_iwp.xz, uWindDir) * 0.22 - uTime * 0.9; // gust wave scrolls downwind
+    float _gust = max(0.0, sin(_ph) * 0.6 + sin(_ph * 2.3 + 1.3) * 0.3 + 0.45);
+    float _lean = _gust * uWindStr * 1.1 * _hf * _hf;        // world m of downwind lean
+    transformed.x += (uWindDir.x * _lean) / _sx;             // /scale → local units
+    transformed.z += (uWindDir.y * _lean) / _sx;
+    transformed.y -= (_lean * _lean * 0.3) / _sy;            // foreshorten (arc-length)
+    transformed.x += (sin(uTime * 4.5 + _iwp.x * 0.5 + _iwp.z * 0.5) * 0.05 * _hf * uWindStr) / _sx; // flutter
+  }`);
       shader.fragmentShader = "varying float vInstAlpha;\n" + shader.fragmentShader;
       shader.fragmentShader = shader.fragmentShader.replace(
         "#include <map_fragment>", "#include <map_fragment>\n  diffuseColor.a *= vInstAlpha;");
@@ -168,6 +196,13 @@ export class Grass {
   }
 
   setHeightmap(hm: Heightmap): void { this.hm = hm; }
+
+  /** Per-frame wind for sway. dir is a normalized XZ direction, str ~0..2. */
+  setWind(t: number, dir: THREE.Vector2, str: number): void {
+    this.wind.uTime.value = t;
+    this.wind.uWindDir.value.copy(dir);
+    this.wind.uWindStr.value = str;
+  }
 
   // Port of net.gd _grass_transform (food assumed full → no sink). Writes the
   // instance matrix for slot `n` and returns nothing.

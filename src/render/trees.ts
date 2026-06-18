@@ -32,6 +32,21 @@ export class Trees {
   private instMeshes: THREE.InstancedMesh[] = [];
   private baseScale = 1;
   private placed = false;
+  private topLocal = 1; // local-space height of the canopy top (for sway falloff)
+  // shared wind uniforms — trees sway MUCH less than grass (tops only, base fixed)
+  private wind = {
+    uTime: { value: 0 },
+    uWindDir: { value: new THREE.Vector2(1, 0) },
+    uWindStr: { value: 0.8 },
+    uTreeTop: { value: 1 },
+  };
+
+  /** Per-frame wind for sway. dir is a normalized XZ direction, str ~0..2. */
+  setWind(t: number, dir: THREE.Vector2, str: number): void {
+    this.wind.uTime.value = t;
+    this.wind.uWindDir.value.copy(dir);
+    this.wind.uWindStr.value = str;
+  }
 
   async load(): Promise<void> {
     const loader = new GLTFLoader();
@@ -43,6 +58,8 @@ export class Trees {
     const box = new THREE.Box3().setFromObject(scene);
     const nativeH = Math.max(0.001, box.max.y - box.min.y);
     this.baseScale = 6.0 / nativeH; // s=1 → ~6 m; game scales 1..4 on top
+    this.topLocal = box.max.y; // canopy top in merged-geometry local space
+    this.wind.uTreeTop.value = this.topLocal;
 
     // collect geometries grouped by material (apply world transform, pixel-art tex)
     const groups = new Map<string, MatGroup[]>();
@@ -76,6 +93,7 @@ export class Trees {
     for (const list of groups.values()) {
       const merged = mergeGeometries(list.map((l) => l.geo), false);
       if (!merged) continue;
+      this.applySway(list[0].mat);
       const inst = new THREE.InstancedMesh(merged, list[0].mat, TREE_COUNT + 8);
       inst.castShadow = true;
       inst.frustumCulled = false;
@@ -83,6 +101,35 @@ export class Trees {
       this.instMeshes.push(inst);
       this.group.add(inst);
     }
+  }
+
+  // Inject a subtle canopy sway into a tree material: only the upper geometry
+  // leans downwind (base fixed), at a fraction of the grass amplitude and a
+  // slower rate, so trees read as gently dancing rather than whipping.
+  private applySway(mat: THREE.Material): void {
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uTime = this.wind.uTime;
+      shader.uniforms.uWindDir = this.wind.uWindDir;
+      shader.uniforms.uWindStr = this.wind.uWindStr;
+      shader.uniforms.uTreeTop = this.wind.uTreeTop;
+      shader.vertexShader =
+        "uniform float uTime, uWindStr, uTreeTop;\nuniform vec2 uWindDir;\n" + shader.vertexShader;
+      shader.vertexShader = shader.vertexShader.replace(
+        "#include <begin_vertex>",
+        `#include <begin_vertex>
+  {
+    float _sx = length(instanceMatrix[0].xyz);
+    vec3 _iwp = instanceMatrix[3].xyz;
+    float _hf = clamp(transformed.y / uTreeTop, 0.0, 1.0); // 0 trunk base → 1 canopy top
+    _hf = _hf * _hf;                                       // bias sway into the crown
+    float _ph = dot(_iwp.xz, uWindDir) * 0.06 - uTime * 0.5;
+    float _gust = sin(_ph) * 0.6 + sin(_ph * 1.7 + 1.1) * 0.4;
+    float _lean = _gust * uWindStr * 0.22 * _hf;           // world m — ~1/5 of grass
+    transformed.x += (uWindDir.x * _lean) / _sx;
+    transformed.z += (uWindDir.y * _lean) / _sx;
+  }`);
+    };
+    mat.needsUpdate = true;
   }
 
   /** Place trees once the heightmap is available. */
