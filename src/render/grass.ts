@@ -7,8 +7,9 @@
 import * as THREE from "three";
 import { Heightmap } from "../world/heightmap.js";
 import {
-  VOXEL_WATER_LEVEL, RENDER_RADIUS_M, GRASS_FULL_HEIGHT_M, GRASS_WIDTH_M,
+  VOXEL_WATER_LEVEL, GRASS_FULL_HEIGHT_M, GRASS_WIDTH_M,
 } from "../world/constants.js";
+import { settings } from "../settings.js";
 
 const SPACING = 4.5;
 const CAP = 14000;
@@ -84,7 +85,7 @@ export class Grass {
     this.lastCellX = cellX;
     this.lastCellZ = cellZ;
 
-    const R = RENDER_RADIUS_M, cells = Math.floor(R / SPACING), r2 = R * R;
+    const R = settings.renderRadiusM, cells = Math.floor(R / SPACING), r2 = R * R;
     let n = 0;
     for (let dz = -cells; dz <= cells && n < CAP; dz++) {
       for (let dx = -cells; dx <= cells && n < CAP; dx++) {

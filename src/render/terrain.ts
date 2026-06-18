@@ -7,9 +7,9 @@
 import * as THREE from "three";
 import { Heightmap } from "../world/heightmap.js";
 import {
-  VOXEL_CHUNK, VOXEL_WATER_LEVEL, VOXEL_WATER_SURFACE_OFFSET,
-  CHUNK_RENDER_RADIUS, RENDER_RADIUS_M,
+  VOXEL_CHUNK, VOXEL_WATER_LEVEL, VOXEL_WATER_SURFACE_OFFSET, RENDER_RADIUS_M,
 } from "../world/constants.js";
+import { settings } from "../settings.js";
 
 const CHUNK = VOXEL_CHUNK;
 const BUILD_PER_FRAME = 3;
@@ -69,7 +69,7 @@ export class Terrain {
 
     const ccx = Math.floor(target.x / CHUNK);
     const ccz = Math.floor(target.z / CHUNK);
-    const R = CHUNK_RENDER_RADIUS;
+    const R = settings.chunkRadius;
 
     for (const [key, mesh] of this.chunks) {
       const [cx, cz] = key.split(",").map(Number);

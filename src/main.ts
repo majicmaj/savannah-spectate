@@ -9,6 +9,9 @@ import { Trees } from "./render/trees.js";
 import { HitJuice } from "./render/hit_juice.js";
 import { CorpseModels } from "./render/corpse_models.js";
 import { Hud } from "./render/hud.js";
+import { EscMenu } from "./render/esc_menu.js";
+import { AudioSys } from "./render/audio.js";
+import { settings } from "./settings.js";
 import { Heightmap } from "./world/heightmap.js";
 import { computeDayNight, CYCLE_SECONDS } from "./world/daynight.js";
 import {
@@ -88,6 +91,26 @@ corpseModels.load().then(() => (view.corpsesExternal = true)).catch((e) => conso
 const bottomHud = new Hud();
 const helpEl = document.getElementById("help") as HTMLDivElement;
 let hudsVisible = true;
+
+const escMenu = new EscMenu();
+function applySettings() {
+  camera.fov = settings.fov;
+  camera.far = settings.renderRadiusM + 140;
+  camera.updateProjectionMatrix();
+  renderer.shadowMap.enabled = settings.shadows;
+  if (scene.fog) { (scene.fog as THREE.Fog).near = settings.renderRadiusM * 0.55; (scene.fog as THREE.Fog).far = settings.renderRadiusM; }
+}
+escMenu.onApply = applySettings;
+applySettings();
+
+const audio = new AudioSys();
+audio.attach(camera);
+// browsers block audio until a user gesture
+const startAudio = () => { audio.start(); window.removeEventListener("pointerdown", startAudio); window.removeEventListener("keydown", startAudio); };
+window.addEventListener("pointerdown", startAudio);
+window.addEventListener("keydown", startAudio);
+let eatTimer = 0;
+const _tmpVec = new THREE.Vector3();
 const heightmap = new Heightmap();
 const spectate = new SpectateCamera(camera);
 const lastCenter = new THREE.Vector3(0, VOXEL_HEIGHT_BASE, 0);
@@ -119,7 +142,8 @@ client.onSnapshot = (snap) => {
 client.connect();
 
 window.addEventListener("keydown", (e) => {
-  if (e.key === "r" || e.key === "R") spectate.random(view);
+  if (e.key === "Escape") escMenu.toggle();
+  else if (e.key === "r" || e.key === "R") spectate.random(view);
   else if (e.key === "h" || e.key === "H") {
     hudsVisible = !hudsVisible;
     bottomHud.setVisible(hudsVisible);
@@ -164,7 +188,7 @@ function frame(now: number) {
   // 1. interpolate ALL entities first → fresh positions for models + camera this
   //    frame (avoids the 1-frame model/camera desync). Cull center uses last
   //    frame's target (slack within the 280m radius).
-  view.update(now, lastCenter, RENDER_RADIUS_M);
+  view.update(now, lastCenter, settings.renderRadiusM);
 
   const tid = spectate.targetId;
   const targetPos = tid != null ? view.getRenderPos(tid) : null;
@@ -187,7 +211,6 @@ function frame(now: number) {
   spectate.update(dt, view);
   grass.updateAlpha(camera.position, targetPos); // fade grass off the subject
   if (corpseModels.loaded) corpseModels.update(view.entities().filter((e) => e.isCorpse));
-  for (const h of view.consumeHits()) hitJuice.spawn(h.x, h.y, h.z, h.amount);
   hitJuice.update(dt);
   bottomHud.update(tid != null ? view.getStats(tid) : null, tid != null ? `#${tid}` : "");
 
@@ -211,6 +234,27 @@ function frame(now: number) {
   hemi.intensity = dn.ambientEnergy * 3.0 + 0.12;
   (scene.background as THREE.Color).setRGB(dn.skyColor[0], dn.skyColor[1], dn.skyColor[2]);
   scene.fog!.color.setRGB(dn.fogColor[0], dn.fogColor[1], dn.fogColor[2]);
+
+  // audio: music/ambient day-night, calls, hit impacts (+ juice), eating
+  const night = dn.daylight < 0.35;
+  audio.update(dt, night, camera.position);
+  for (const c of view.consumeCalls()) audio.playCall(c.animal, c.callType, _tmpVec.set(c.x, c.y, c.z));
+  for (const h of view.consumeHits()) {
+    hitJuice.spawn(h.x, h.y, h.z, h.amount);
+    audio.playHit(_tmpVec.set(h.x, h.y, h.z), Math.min(1, h.amount / 8));
+  }
+  eatTimer += dt;
+  if (eatTimer > 0.5 && targetPos) {
+    eatTimer = 0;
+    let best: THREE.Vector3 | null = null;
+    let bestD = 45 * 45;
+    for (const e of view.entities()) {
+      if (e.isCorpse || (e.aiState !== 4 && e.aiState !== 16)) continue;
+      const d = (e.x - camera.position.x) ** 2 + (e.z - camera.position.z) ** 2;
+      if (d < bestD) { bestD = d; best = _tmpVec.set(e.x, e.y, e.z); }
+    }
+    if (best) audio.playEat(best);
+  }
 
   renderer.render(scene, camera);
 

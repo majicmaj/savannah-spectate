@@ -42,6 +42,7 @@ interface Ent extends RenderEnt {
   hunger: number;
   sleep: number;
   sizeRoll: number;
+  lastCallTime: number;
   seen: boolean;
 }
 
@@ -51,6 +52,7 @@ export interface EntStats {
 }
 
 export interface HitEvent { x: number; y: number; z: number; amount: number; id: number; }
+export interface CallEvent { animal: number; callType: number; x: number; y: number; z: number; }
 
 const MAX_EXTRAP_MS = 170; // cap forward-prediction on packet gaps
 
@@ -69,6 +71,7 @@ export class WorldView {
   private suppressed = new Set<number>();
   private hm: Heightmap | null = null;
   private hits: HitEvent[] = [];
+  private calls: CallEvent[] = [];
   corpsesExternal = false; // when true, meat.glb models render corpses (skip capsules)
 
   setHeightmap(hm: Heightmap): void {
@@ -81,6 +84,12 @@ export class WorldView {
     const h = this.hits;
     this.hits = [];
     return h;
+  }
+  consumeCalls(): CallEvent[] {
+    if (this.calls.length === 0) return [];
+    const c = this.calls;
+    this.calls = [];
+    return c;
   }
 
   constructor() {
@@ -131,6 +140,8 @@ export class WorldView {
         hunger: arr[P.HUNGER] as number,
         sleep: arr[P.SLEEP_BAR] as number,
         sizeRoll: arr[P.SIZE_ROLL] as number,
+        lastCallType: arr[P.LAST_CALL_TYPE] as number,
+        lastCallTime: arr[P.LAST_CALL_TIME] as number,
       });
     }
     for (const [cid, c] of snap.c) {
@@ -140,6 +151,7 @@ export class WorldView {
       this.pushSample(id, nowMs, x, cy, z, cyaw, -1, size, {
         aiState: 0, sleeping: false, flightMode: 0, isFemale: false, isCorpse: true, meat, hp: 0,
         hpMax: 0, stamina: 0, thirst: 0, hunger: 0, sleep: 0, sizeRoll: 1,
+        lastCallType: 255, lastCallTime: 0,
       });
     }
 
@@ -152,6 +164,7 @@ export class WorldView {
     meta: {
       aiState: number; sleeping: boolean; flightMode: number; isFemale: boolean; isCorpse: boolean; meat: number;
       hp: number; hpMax: number; stamina: number; thirst: number; hunger: number; sleep: number; sizeRoll: number;
+      lastCallType: number; lastCallTime: number;
     },
   ): void {
     let e = this.ents.get(id);
@@ -162,6 +175,7 @@ export class WorldView {
         isFemale: meta.isFemale, isCorpse: meta.isCorpse, meat: meta.meat,
         hp: meta.hp, hpMax: meta.hpMax, stamina: meta.stamina, thirst: meta.thirst,
         hunger: meta.hunger, sleep: meta.sleep, sizeRoll: meta.sizeRoll,
+        lastCallTime: meta.lastCallTime,
         buf: [{ t, x, y, z, yaw }], seen: true,
       };
       this.ents.set(id, e);
@@ -171,6 +185,11 @@ export class WorldView {
     if (!meta.isCorpse && meta.hp < e.hp - 0.5 && meta.hp > 0) {
       this.hits.push({ x, y: y + size * 0.6, z, amount: e.hp - meta.hp, id });
     }
+    // call detection: last_call_time advanced + a valid call type → vocalization
+    if (!meta.isCorpse && meta.lastCallType !== 255 && meta.lastCallTime !== e.lastCallTime && e.buf.length > 1) {
+      this.calls.push({ animal, callType: meta.lastCallType, x, y: y + size, z });
+    }
+    e.lastCallTime = meta.lastCallTime;
     e.hp = meta.hp; e.hpMax = meta.hpMax; e.stamina = meta.stamina; e.thirst = meta.thirst;
     e.hunger = meta.hunger; e.sleep = meta.sleep; e.sizeRoll = meta.sizeRoll;
     e.animal = animal; e.size = size;
