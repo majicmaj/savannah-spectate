@@ -62,6 +62,19 @@ function shortestAngleLerp(a: number, b: number, t: number): number {
   return a + d * t;
 }
 
+// Uniform Catmull-Rom: smooth C1 curve through p1→p2 using neighbors p0,p3.
+// Cheap (a handful of mul/add) and passes through the samples, so jump/pounce/
+// flight arcs read as smooth parabolas instead of piecewise-linear kinks.
+function catmullRom(p0: number, p1: number, p2: number, p3: number, f: number): number {
+  const f2 = f * f, f3 = f2 * f;
+  return 0.5 * (
+    2 * p1 +
+    (-p0 + p2) * f +
+    (2 * p0 - 5 * p1 + 4 * p2 - p3) * f2 +
+    (-p0 + 3 * p1 - 3 * p2 + p3) * f3
+  );
+}
+
 export class WorldView {
   readonly group = new THREE.Group();
   private meshes: THREE.InstancedMesh[] = [];
@@ -269,15 +282,17 @@ export class WorldView {
       e.yaw = shortestAngleLerp(prev.yaw, last.yaw, 1 + f);
       return;
     }
-    // find bracketing pair
+    // find bracketing pair → Catmull-Rom through [p0, a, c, p3] for a smooth arc
     for (let i = b.length - 1; i > 0; i--) {
       if (t >= b[i - 1].t) {
         const a = b[i - 1], c = b[i];
         const f = (t - a.t) / Math.max(1, c.t - a.t);
-        e.x = a.x + (c.x - a.x) * f;
-        e.y = a.y + (c.y - a.y) * f;
-        e.z = a.z + (c.z - a.z) * f;
-        e.yaw = shortestAngleLerp(a.yaw, c.yaw, f);
+        const p0 = i >= 2 ? b[i - 2] : a;   // clamp at buffer edges
+        const p3 = i + 1 < b.length ? b[i + 1] : c;
+        e.x = catmullRom(p0.x, a.x, c.x, p3.x, f);
+        e.y = catmullRom(p0.y, a.y, c.y, p3.y, f);
+        e.z = catmullRom(p0.z, a.z, c.z, p3.z, f);
+        e.yaw = shortestAngleLerp(a.yaw, c.yaw, f); // angles: linear (avoids wrap overshoot)
         return;
       }
     }
