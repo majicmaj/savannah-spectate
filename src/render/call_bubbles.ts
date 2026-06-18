@@ -47,25 +47,13 @@ export class CallBubbles {
     this.cursor = (this.cursor + 1) % POOL;
     const g = b.canvas.getContext("2d")!;
     g.clearRect(0, 0, CW, CH);
-    // speech bubble: rounded dark pill + colored border + colored text
-    const bw = 200, bh = 80, bx = (CW - bw) / 2, by = (CH - bh) / 2 - 6, r = 18;
-    g.beginPath();
-    g.moveTo(bx + r, by);
-    g.arcTo(bx + bw, by, bx + bw, by + bh, r);
-    g.arcTo(bx + bw, by + bh, bx, by + bh, r);
-    g.arcTo(bx, by + bh, bx, by, r);
-    g.arcTo(bx, by, bx + bw, by, r);
-    g.closePath();
-    g.fillStyle = "rgba(18,22,26,0.82)"; g.fill();
-    g.lineWidth = 4; g.strokeStyle = color; g.stroke();
-    // little tail
-    g.beginPath();
-    g.moveTo(CW / 2 - 12, by + bh - 2); g.lineTo(CW / 2, by + bh + 18); g.lineTo(CW / 2 + 12, by + bh - 2);
-    g.closePath(); g.fillStyle = "rgba(18,22,26,0.82)"; g.fill();
-    g.font = "bold 52px ui-monospace, Menlo, monospace";
+    // text only (no bubble) — colored fill + dark outline for legibility over the scene
+    g.font = "bold 64px ui-monospace, Menlo, monospace";
     g.textAlign = "center"; g.textBaseline = "middle";
+    g.lineWidth = 8; g.strokeStyle = "rgba(10,12,14,0.9)";
+    g.strokeText(text, CW / 2, CH / 2);
     g.fillStyle = color;
-    g.fillText(text, CW / 2, by + bh / 2);
+    g.fillText(text, CW / 2, CH / 2);
     b.tex.needsUpdate = true;
     b.age = 0;
     b.sprite.position.set(x, y + 0.4, z);

@@ -13,11 +13,13 @@ import { clone as skeletonClone } from "three/examples/jsm/utils/SkeletonUtils.j
 import { ANIMAL_MODELS, LIONESS_MODEL } from "../world/constants.js";
 import type { RenderEnt } from "./world_view.js";
 
-// The GLBs are low-poly rigid node-TRS models (cheaper than the capsule), so we
-// render them for essentially every on-screen animal instead of the cylinder
-// placeholder. High caps with a generous backstop for extreme crowds.
-const MAX_MODELS = 200; // nearest-to-target entities that get a full GLB
-const MAX_DIST = 340; // covers the render radius; beyond it, capsule fallback
+// GLB models render for the nearest animals instead of the capsule placeholder.
+// Each model is an individually-drawn animated Object3D, so the count is the main
+// FPS lever — keep it bounded. Beyond MAX_ANIM (nearest), models still draw but
+// their animation mixer is frozen (skipped) to cut per-frame CPU.
+const MAX_MODELS = 80; // nearest entities that get a GLB (was 200 → tanked FPS)
+const MAX_ANIM = 32; // of those, only the nearest get live animation updates
+const MAX_DIST = 190; // beyond this, capsule fallback
 const RUN_SPEED = 5.0; // m/s threshold for run vs walk
 
 interface Template {
@@ -167,7 +169,9 @@ export class AnimalModels {
     // release models no longer wanted
     for (const id of [...this.active.keys()]) if (!want.has(id)) this.release(id);
 
+    let rank = 0; // cand is sorted nearest-first → animate only the closest MAX_ANIM
     for (const { e } of cand) {
+      const animate = rank++ < MAX_ANIM;
       const path = this.modelPath(e);
       let inst = this.active.get(e.id);
       if (inst && inst.path !== path) {
@@ -186,6 +190,8 @@ export class AnimalModels {
       const s = tmpl.baseScale * Math.max(0.3, e.size);
       inst.root.scale.setScalar(s);
 
+      // animation only for the nearest models; far ones hold a static pose (no
+      // mixer cost). Still set a clip once so the pose isn't a T-stance.
       const desired = pickClip(e, inst.actions, path === ANIMAL_MODELS[6]);
       if (desired !== inst.current) {
         const next = inst.actions.get(desired);
@@ -196,7 +202,8 @@ export class AnimalModels {
           inst.current = desired;
         }
       }
-      inst.mixer.update(dt);
+      if (animate) inst.mixer.update(dt);
+      else if (inst.current) inst.mixer.update(0); // settle pose once, no advance
       this.suppressed.add(e.id);
     }
   }

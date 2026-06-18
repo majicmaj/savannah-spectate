@@ -170,8 +170,20 @@ const heightmap = new Heightmap();
 const spectate = new SpectateCamera(camera);
 const lastCenter = new THREE.Vector3(0, VOXEL_HEIGHT_BASE, 0);
 
+// Loading veil — keep it up (rendering behind it) until terrain + models + the
+// first snapshot are all in, so the first frames never flash partial/artifacted.
+const loadingEl = document.getElementById("loading") as HTMLDivElement;
+let rdyHeight = false, rdyModels = false, rdySnap = false, revealed = false;
+function maybeReveal(): void {
+  if (revealed || !(rdyHeight && rdyModels && rdySnap)) return;
+  revealed = true;
+  loadingEl.classList.add("hide");
+  setTimeout(() => (loadingEl.style.display = "none"), 700);
+}
+setTimeout(() => { rdyHeight = rdyModels = rdySnap = true; maybeReveal(); }, 9000); // failsafe
+
 let modelStatus = "loading models…";
-models.load((d, t) => (modelStatus = `models ${d}/${t}`)).then(() => (modelStatus = "models ready"));
+models.load((d, t) => (modelStatus = `models ${d}/${t}`)).then(() => { modelStatus = "models ready"; rdyModels = true; maybeReveal(); });
 let treesLoaded = false;
 trees.load().then(() => (treesLoaded = true)).catch((e) => console.error("[trees] load failed", e));
 
@@ -192,6 +204,7 @@ client.onHeightmap = (payload) => {
   view.setHeightmap(heightmap); // ground corpses on the terrain
   terrainStatus = `terrain ${heightmap.W}×${heightmap.H}`;
   ground.visible = false; // real terrain takes over
+  rdyHeight = true; maybeReveal();
 };
 // live weather (smoothed toward each snapshot so cloud cover / rain ease in/out)
 let weatherRain = 0;
@@ -203,6 +216,7 @@ client.onSnapshot = (snap) => {
   spectate.ensureTarget(view);
   weatherRain += (snap.rain - weatherRain) * 0.25;
   weatherWetness += (snap.wetness - weatherWetness) * 0.25;
+  if (!rdySnap) { rdySnap = true; maybeReveal(); }
 };
 client.onRoster = (r) => { roster = r; if (playerMenu.visible) playerMenu.rebuild(roster, view); };
 client.connect();
@@ -369,9 +383,14 @@ function frame(now: number) {
   // audio: music/ambient day-night, calls, hit impacts (+ juice), eating
   const night = dn.daylight < 0.35;
   audio.update(dt, night, camera.position);
+  const callR2 = settings.callRadius * settings.callRadius;
   for (const c of view.consumeCalls()) {
     audio.playCall(c.animal, c.callType, _tmpVec.set(c.x, c.y, c.z));
-    if (settings.callBubbles) callBubbles.spawn(c.x, c.y, c.z, c.callType);
+    // only show call text near the spectated animal (perf + relevance)
+    if (settings.callBubbles && targetPos &&
+        (c.x - targetPos.x) ** 2 + (c.z - targetPos.z) ** 2 < callR2) {
+      callBubbles.spawn(c.x, c.y, c.z, c.callType);
+    }
   }
   callBubbles.update(dt);
   for (const h of view.consumeHits()) {

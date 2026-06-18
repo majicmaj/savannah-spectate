@@ -74,7 +74,8 @@ export class EscMenu {
     this.checkbox(fx, "Run dust", () => settings.dust, (v) => (settings.dust = v));
     this.checkbox(fx, "Fireflies", () => settings.fireflies, (v) => (settings.fireflies = v));
     this.checkbox(fx, "Hit FX", () => settings.hitFx, (v) => (settings.hitFx = v));
-    this.checkbox(fx, "Call bubbles", () => settings.callBubbles, (v) => (settings.callBubbles = v));
+    this.checkbox(fx, "Call text", () => settings.callBubbles, (v) => (settings.callBubbles = v));
+    this.slider(fx, "Call range", 20, 200, 10, () => settings.callRadius, (v) => (settings.callRadius = v), (v) => `${v} m`);
 
     // ---- Water -------------------------------------------------------------
     const water = this.section("Water");
