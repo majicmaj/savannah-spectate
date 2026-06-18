@@ -19,7 +19,8 @@ export interface WaterConfig {
   reflectivity: number; // 0..1 how much sky/env shows in the reflection
 }
 const DEFAULT: WaterConfig = {
-  colorDeep: "#10384f", colorShallow: "#2f7f9e", waveHeight: 0.22, waveSpeed: 0.6, reflectivity: 1.0,
+  // savannah water: warm teal-green deep, pale aqua shallows (not navy)
+  colorDeep: "#1c5a52", colorShallow: "#5fa39a", waveHeight: 0.22, waveSpeed: 0.6, reflectivity: 1.0,
 };
 
 const SEG = 96; // grid resolution — only matters for wave smoothness now (no CPU depth)
@@ -132,9 +133,13 @@ export class Water {
           float ct = max(dot(N, V), 0.0);
           float fres = 0.02 + 0.98 * pow(1.0 - ct, 5.0);
 
+          // depth-driven body color: shallow water is mostly sky-tinted/clear,
+          // deep water accumulates more of the savannah water color (a cheap
+          // "color fog" — one mix, no extra texture work).
           float depthT = clamp(depth / 4.0, 0.0, 1.0);
           vec3 base = mix(uColorShallow, uColorDeep, depthT);
-          base = mix(base, uSkyColor, 0.5);
+          float skyMix = mix(0.7, 0.22, depthT); // shallow → 70% sky, deep → 22%
+          base = mix(base, uSkyColor, skyMix);
 
           vec3 R = reflect(-V, N);
           vec3 refl = textureCube(uEnvMap, R).rgb;

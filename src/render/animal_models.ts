@@ -13,8 +13,11 @@ import { clone as skeletonClone } from "three/examples/jsm/utils/SkeletonUtils.j
 import { ANIMAL_MODELS, LIONESS_MODEL } from "../world/constants.js";
 import type { RenderEnt } from "./world_view.js";
 
-const MAX_MODELS = 28; // nearest-to-target entities that get a full GLB
-const MAX_DIST = 110; // beyond this, capsule only
+// The GLBs are low-poly rigid node-TRS models (cheaper than the capsule), so we
+// render them for essentially every on-screen animal instead of the cylinder
+// placeholder. High caps with a generous backstop for extreme crowds.
+const MAX_MODELS = 200; // nearest-to-target entities that get a full GLB
+const MAX_DIST = 340; // covers the render radius; beyond it, capsule fallback
 const RUN_SPEED = 5.0; // m/s threshold for run vs walk
 
 interface Template {

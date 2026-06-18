@@ -44,6 +44,8 @@ const hud = document.getElementById("hud") as HTMLDivElement;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
+// global vibrance bump (cheap GPU-composited CSS filter; affects only the 3D canvas)
+canvas.style.filter = "saturate(1.16) contrast(1.03)";
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -203,6 +205,7 @@ window.addEventListener("keydown", (e) => {
     applySettings();
     escMenu.refresh();
   }
+  else if (e.key === "F5") { spectate.flip(); e.preventDefault(); } // face animal / behind
   else if (e.key === "[") spectate.step(view, -1);
   else if (e.key === "]") spectate.step(view, +1);
   else if (e.key === "ArrowLeft") { spectate.arrows.left = true; e.preventDefault(); }
@@ -316,7 +319,9 @@ function frame(now: number) {
   hemi.groundColor.setRGB(dn.ambientColor[0] * 0.4, dn.ambientColor[1] * 0.4, dn.ambientColor[2] * 0.4);
   hemi.intensity = dn.ambientEnergy * 3.0 + 0.12;
   (scene.background as THREE.Color).setRGB(dn.skyColor[0], dn.skyColor[1], dn.skyColor[2]);
-  scene.fog!.color.setRGB(dn.fogColor[0], dn.fogColor[1], dn.fogColor[2]);
+  // fog slightly darker than the sky horizon → distant terrain reads with depth
+  // instead of washing out, while staying close enough to blend.
+  scene.fog!.color.setRGB(dn.fogColor[0] * 0.82, dn.fogColor[1] * 0.82, dn.fogColor[2] * 0.82);
 
   water.update(now / 1000, camera.position, dn.sunDir, dn.sunColor, dn.skyColor, dn.daylight);
   // cloud cover: follow the live weather (wet season → overcast, rain → heavy) or
