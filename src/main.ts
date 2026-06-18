@@ -6,6 +6,7 @@ import { SpectateCamera } from "./render/spectate_camera.js";
 import { Terrain } from "./render/terrain.js";
 import { Grass } from "./render/grass.js";
 import { Trees } from "./render/trees.js";
+import { HitJuice } from "./render/hit_juice.js";
 import { Heightmap } from "./world/heightmap.js";
 import { computeDayNight, CYCLE_SECONDS } from "./world/daynight.js";
 import {
@@ -77,8 +78,11 @@ const grass = new Grass();
 scene.add(grass.mesh);
 const trees = new Trees();
 scene.add(trees.group);
+const hitJuice = new HitJuice();
+scene.add(hitJuice.group);
 const heightmap = new Heightmap();
 const spectate = new SpectateCamera(camera);
+const lastCenter = new THREE.Vector3(0, VOXEL_HEIGHT_BASE, 0);
 
 let modelStatus = "loading models…";
 models.load((d, t) => (modelStatus = `models ${d}/${t}`)).then(() => (modelStatus = "models ready"));
@@ -110,7 +114,25 @@ window.addEventListener("keydown", (e) => {
   if (e.key === "r" || e.key === "R") spectate.random(view);
   else if (e.key === "[") spectate.step(view, -1);
   else if (e.key === "]") spectate.step(view, +1);
+  else if (e.key === "ArrowLeft") { spectate.arrows.left = true; e.preventDefault(); }
+  else if (e.key === "ArrowRight") { spectate.arrows.right = true; e.preventDefault(); }
+  else if (e.key === "ArrowUp") { spectate.arrows.up = true; e.preventDefault(); }
+  else if (e.key === "ArrowDown") { spectate.arrows.down = true; e.preventDefault(); }
 });
+window.addEventListener("keyup", (e) => {
+  if (e.key === "ArrowLeft") spectate.arrows.left = false;
+  else if (e.key === "ArrowRight") spectate.arrows.right = false;
+  else if (e.key === "ArrowUp") spectate.arrows.up = false;
+  else if (e.key === "ArrowDown") spectate.arrows.down = false;
+});
+let dragX = 0, dragY = 0;
+canvas.addEventListener("mousedown", (e) => { spectate.dragging = true; dragX = e.clientX; dragY = e.clientY; });
+window.addEventListener("mousemove", (e) => {
+  if (!spectate.dragging) return;
+  spectate.dragOrbit(e.clientX - dragX, e.clientY - dragY);
+  dragX = e.clientX; dragY = e.clientY;
+});
+window.addEventListener("mouseup", () => { spectate.dragging = false; });
 window.addEventListener("wheel", (e) => spectate.zoom(e.deltaY), { passive: true });
 window.addEventListener("resize", () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -125,8 +147,14 @@ function frame(now: number) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
 
+  // 1. interpolate ALL entities first → fresh positions for models + camera this
+  //    frame (avoids the 1-frame model/camera desync). Cull center uses last
+  //    frame's target (slack within the 280m radius).
+  view.update(now, lastCenter, RENDER_RADIUS_M);
+
   const tid = spectate.targetId;
   const targetPos = tid != null ? view.getRenderPos(tid) : null;
+  if (targetPos) lastCenter.copy(targetPos);
 
   // anchor server AI/physics LOD at the spectate target so nearby bots tick at
   // full rate (smooth) instead of the ~2 Hz far-bot step. ~10 Hz uplink.
@@ -137,12 +165,15 @@ function frame(now: number) {
 
   if (treesLoaded && heightmap.loaded) trees.place(heightmap);
 
+  // 2. models use the fresh positions; set suppression for next frame's capsules
   models.update(dt, targetPos, view.entities());
   view.setSuppressed(models.suppressed);
-  view.update(now, targetPos ?? undefined, RENDER_RADIUS_M);
   terrain.update(dt, targetPos);
   grass.update(targetPos);
   spectate.update(dt, view);
+  grass.updateAlpha(camera.position, targetPos); // fade grass off the subject
+  for (const h of view.consumeHits()) hitJuice.spawn(h.x, h.y, h.z, h.amount);
+  hitJuice.update(dt);
 
   // day/night — extrapolate time-of-day, drive sun/moon/sky/fog/ambient
   const tNorm = ((((timeOfDay + (now - timeRecvAt) / 1000) % CYCLE_SECONDS) / CYCLE_SECONDS) + 1) % 1;

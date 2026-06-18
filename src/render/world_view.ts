@@ -35,8 +35,13 @@ interface Sample { t: number; x: number; y: number; z: number; yaw: number; }
 
 interface Ent extends RenderEnt {
   buf: Sample[];
+  hp: number;
   seen: boolean;
 }
+
+export interface HitEvent { x: number; y: number; z: number; amount: number; id: number; }
+
+const MAX_EXTRAP_MS = 170; // cap forward-prediction on packet gaps
 
 function shortestAngleLerp(a: number, b: number, t: number): number {
   let d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI;
@@ -52,9 +57,18 @@ export class WorldView {
   private dummy = new THREE.Object3D();
   private suppressed = new Set<number>();
   private hm: Heightmap | null = null;
+  private hits: HitEvent[] = [];
 
   setHeightmap(hm: Heightmap): void {
     this.hm = hm;
+  }
+
+  /** Hits detected since last call (HP drops), for the juice system. */
+  consumeHits(): HitEvent[] {
+    if (this.hits.length === 0) return [];
+    const h = this.hits;
+    this.hits = [];
+    return h;
   }
 
   constructor() {
@@ -98,6 +112,7 @@ export class WorldView {
         isFemale: !!arr[P.IS_FEMALE],
         isCorpse: false,
         meat: 1,
+        hp: arr[P.HP] as number,
       });
     }
     for (const [cid, c] of snap.c) {
@@ -105,7 +120,7 @@ export class WorldView {
       const [x, z, size, meat, cyaw] = c;
       const cy = this.hm?.loaded ? this.hm.surfaceAt(x, z) : 0; // ground the corpse
       this.pushSample(id, nowMs, x, cy, z, cyaw, -1, size, {
-        aiState: 0, sleeping: false, flightMode: 0, isFemale: false, isCorpse: true, meat,
+        aiState: 0, sleeping: false, flightMode: 0, isFemale: false, isCorpse: true, meat, hp: 0,
       });
     }
 
@@ -115,17 +130,24 @@ export class WorldView {
   private pushSample(
     id: number, t: number, x: number, y: number, z: number, yaw: number,
     animal: number, size: number,
-    meta: { aiState: number; sleeping: boolean; flightMode: number; isFemale: boolean; isCorpse: boolean; meat: number },
+    meta: { aiState: number; sleeping: boolean; flightMode: number; isFemale: boolean; isCorpse: boolean; meat: number; hp: number },
   ): void {
     let e = this.ents.get(id);
     if (!e) {
       e = {
         id, animal, size, x, y, z, yaw, speed: 0,
-        ...meta, buf: [{ t, x, y, z, yaw }], seen: true,
+        aiState: meta.aiState, sleeping: meta.sleeping, flightMode: meta.flightMode,
+        isFemale: meta.isFemale, isCorpse: meta.isCorpse, meat: meta.meat,
+        hp: meta.hp, buf: [{ t, x, y, z, yaw }], seen: true,
       };
       this.ents.set(id, e);
       return;
     }
+    // hit detection: HP dropped (not a respawn/heal) → juice at the entity
+    if (!meta.isCorpse && meta.hp < e.hp - 0.5 && meta.hp > 0) {
+      this.hits.push({ x, y: y + size * 0.6, z, amount: e.hp - meta.hp, id });
+    }
+    e.hp = meta.hp;
     e.animal = animal; e.size = size;
     e.aiState = meta.aiState; e.sleeping = meta.sleeping; e.flightMode = meta.flightMode;
     e.isFemale = meta.isFemale; e.isCorpse = meta.isCorpse; e.meat = meta.meat;
@@ -191,8 +213,15 @@ export class WorldView {
     }
     const last = b[b.length - 1];
     if (t >= last.t) {
-      // starved (no newer sample yet) — hold at newest
-      e.x = last.x; e.y = last.y; e.z = last.z; e.yaw = last.yaw;
+      // starved (no newer sample yet) — extrapolate the last velocity briefly
+      // (capped) so a late packet glides instead of freezing then snapping.
+      const prev = b[b.length - 2];
+      const span = Math.max(1, last.t - prev.t);
+      const f = Math.min(t - last.t, MAX_EXTRAP_MS) / span;
+      e.x = last.x + (last.x - prev.x) * f;
+      e.y = last.y + (last.y - prev.y) * f;
+      e.z = last.z + (last.z - prev.z) * f;
+      e.yaw = shortestAngleLerp(prev.yaw, last.yaw, 1 + f);
       return;
     }
     // find bracketing pair

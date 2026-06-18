@@ -1,16 +1,14 @@
-// Spectate camera: third-person chase that sits behind the followed entity along
-// its heading and looks at it. Controls (wired in main.ts):
-//   R        pick a random live target
-//   [ / ]    previous / next target (stable id order)
-//   wheel    zoom in / out
-// The camera follows the entity's facing yaw, so it reads like an over-the-
-// shoulder chase that swings around as the animal turns.
+// Spectate camera: third-person chase behind the followed entity along its
+// heading. Drag (mouse) or arrow keys orbit the camera around the target; on
+// release the orbit offset decays smoothly back to the default chase pose.
 
 import * as THREE from "three";
 import type { WorldView } from "./world_view.js";
 
 const MIN_DIST = 3;
 const MAX_DIST = 60;
+const ARROW_SPEED = 1.6; // rad/s
+const DRAG_SENS = 0.006; // rad/px
 
 export class SpectateCamera {
   targetId: number | null = null;
@@ -20,6 +18,12 @@ export class SpectateCamera {
   private lookAt = new THREE.Vector3();
   private initialized = false;
 
+  // orbit offset (added on top of the chase pose), decays to 0 when released
+  private orbitYaw = 0;
+  private orbitPitch = 0;
+  dragging = false; // set by mouse handlers
+  arrows = { left: false, right: false, up: false, down: false };
+
   constructor(readonly camera: THREE.PerspectiveCamera) {}
 
   zoom(deltaY: number): void {
@@ -27,29 +31,25 @@ export class SpectateCamera {
     this.height = this.distance * 0.35;
   }
 
+  dragOrbit(dx: number, dy: number): void {
+    this.orbitYaw += dx * DRAG_SENS;
+    this.orbitPitch = THREE.MathUtils.clamp(this.orbitPitch - dy * DRAG_SENS, -1.0, 1.1);
+  }
+
   random(view: WorldView): void {
     const ids = view.liveIds();
     if (ids.length === 0) return;
-    // index varies without Math.random by mixing the current target into a step.
     const seed = (this.targetId ?? 0) * 2654435761;
-    const idx = Math.abs(seed ^ ids.length) % ids.length;
-    this.targetId = ids[idx];
+    this.targetId = ids[Math.abs(seed ^ ids.length) % ids.length];
   }
-
   step(view: WorldView, dir: number): void {
     const ids = view.liveIds();
     if (ids.length === 0) return;
-    if (this.targetId == null) {
-      this.targetId = ids[0];
-      return;
-    }
+    if (this.targetId == null) { this.targetId = ids[0]; return; }
     let i = ids.indexOf(this.targetId);
     if (i < 0) i = 0;
-    i = (i + dir + ids.length) % ids.length;
-    this.targetId = ids[i];
+    this.targetId = ids[(i + dir + ids.length) % ids.length];
   }
-
-  /** Ensure we have a target if any exist (called when the first snapshot lands). */
   ensureTarget(view: WorldView): void {
     if (this.targetId != null && view.getRenderPos(this.targetId)) return;
     const ids = view.liveIds();
@@ -57,29 +57,43 @@ export class SpectateCamera {
   }
 
   update(dt: number, view: WorldView): void {
+    // arrow-key orbit
+    const a = this.arrows;
+    if (a.left || a.right || a.up || a.down) {
+      this.orbitYaw += ((a.right ? 1 : 0) - (a.left ? 1 : 0)) * ARROW_SPEED * dt;
+      this.orbitPitch = THREE.MathUtils.clamp(
+        this.orbitPitch + ((a.up ? 1 : 0) - (a.down ? 1 : 0)) * ARROW_SPEED * dt, -1.0, 1.1);
+    }
+    const controlling = this.dragging || a.left || a.right || a.up || a.down;
+    // decay orbit back to chase pose when not actively controlling
+    if (!controlling) {
+      const k = 1 - Math.exp(-3.5 * dt);
+      this.orbitYaw += (0 - this.orbitYaw) * k;
+      this.orbitPitch += (0 - this.orbitPitch) * k;
+    }
+
     if (this.targetId == null) this.ensureTarget(view);
     let pos = this.targetId != null ? view.getRenderPos(this.targetId) : null;
-    if (!pos) {
-      // target vanished — fall back to any live entity
-      this.ensureTarget(view);
-      pos = this.targetId != null ? view.getRenderPos(this.targetId) : null;
-      if (!pos) return;
-    }
+    if (!pos) { this.ensureTarget(view); pos = this.targetId != null ? view.getRenderPos(this.targetId) : null; }
+    if (!pos) return;
     const yaw = view.getRenderYaw(this.targetId!);
-    // forward (-Z rotated by yaw); camera sits behind = +forward-reversed.
-    const fwdX = -Math.sin(yaw);
-    const fwdZ = -Math.cos(yaw);
+
+    // spherical around target: azimuth = heading + orbitYaw; elevation =
+    // base(height/distance) + orbitPitch; radius = chase diagonal.
+    const radius = Math.hypot(this.distance, this.height);
+    const az = yaw + this.orbitYaw;
+    const pitch = THREE.MathUtils.clamp(Math.atan2(this.height, this.distance) + this.orbitPitch, 0.04, 1.45);
+    const cp = Math.cos(pitch), sp = Math.sin(pitch);
     const desired = new THREE.Vector3(
-      pos.x - fwdX * this.distance,
-      pos.y + this.height,
-      pos.z - fwdZ * this.distance,
+      pos.x + radius * cp * Math.sin(az),
+      pos.y + radius * sp,
+      pos.z + radius * cp * Math.cos(az),
     );
 
-    const follow = this.initialized ? 1 - Math.exp(-6 * dt) : 1;
+    const follow = this.initialized ? 1 - Math.exp(-7 * dt) : 1;
     this.initialized = true;
     this.camPos.lerp(desired, follow);
     this.lookAt.lerp(new THREE.Vector3(pos.x, pos.y + 1, pos.z), follow);
-
     this.camera.position.copy(this.camPos);
     this.camera.lookAt(this.lookAt);
   }

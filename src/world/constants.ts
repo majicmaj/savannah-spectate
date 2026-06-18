@@ -51,7 +51,7 @@ export const GRASS_WIDTH_M = 6.0;
 // toward (snapshots arrive at 20 Hz / 50 ms). Mirrors the native client's
 // render-lag buffer; trades ~0.1s latency (irrelevant for spectating) for
 // continuous motion instead of ease-and-stop stutter.
-export const INTERP_DELAY_MS = 110;
+export const INTERP_DELAY_MS = 125;
 
 // Spectator gateway listens here (separate from the game's WebSocketMultiplayerPeer).
 export const SPECTATE_GATEWAY_PORT = 8091;
