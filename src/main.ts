@@ -8,6 +8,7 @@ import { Grass } from "./render/grass.js";
 import { Trees } from "./render/trees.js";
 import { Water } from "./render/water.js";
 import { Sky } from "./render/sky.js";
+import { Rain } from "./render/rain.js";
 import { HitJuice } from "./render/hit_juice.js";
 import { CorpseModels } from "./render/corpse_models.js";
 import { Hud } from "./render/hud.js";
@@ -87,6 +88,8 @@ const water = new Water();
 scene.add(water.mesh);
 const sky = new Sky(camera.far * 0.95);
 scene.add(sky.mesh);
+const rain = new Rain();
+scene.add(rain.mesh);
 
 // Reflection env map: bake the sky dome into a cube texture so the water reflects
 // the live day/night sky (the "HDRI env" the reference uses, but generated from
@@ -159,9 +162,14 @@ client.onHeightmap = (payload) => {
   terrainStatus = `terrain ${heightmap.W}×${heightmap.H}`;
   ground.visible = false; // real terrain takes over
 };
+// live weather (smoothed toward each snapshot so cloud cover / rain ease in/out)
+let weatherRain = 0;
+let weatherWetness = 0;
 client.onSnapshot = (snap) => {
   view.applySnapshot(snap, performance.now());
   spectate.ensureTarget(view);
+  weatherRain += (snap.rain - weatherRain) * 0.25;
+  weatherWetness += (snap.wetness - weatherWetness) * 0.25;
 };
 client.connect();
 
@@ -272,8 +280,16 @@ function frame(now: number) {
   scene.fog!.color.setRGB(dn.fogColor[0], dn.fogColor[1], dn.fogColor[2]);
 
   water.update(now / 1000, camera.position, dn.sunDir, dn.sunColor, dn.skyColor, dn.daylight);
+  // cloud cover: follow the live weather (wet season → overcast, rain → heavy) or
+  // the manual slider when weather-driven clouds are disabled.
+  const cover = settings.weatherClouds
+    ? Math.min(1, 0.18 + weatherWetness * 0.55 + weatherRain * 0.5)
+    : settings.cloudCover;
   // sky dome: zenith = sky color, horizon = fog color (so terrain edge blends in)
-  sky.update(now / 1000, camera.position, dn.sunDir, dn.sunColor, dn.skyColor, dn.fogColor, dn.daylight, settings.cloudCover, dn.moonDir, dn.moonColor, dn.moonEnergy);
+  sky.update(now / 1000, camera.position, dn.sunDir, dn.sunColor, dn.skyColor, dn.fogColor, dn.daylight, cover, dn.moonDir, dn.moonColor, dn.moonEnergy);
+  // rain follows the weather `rain` field; wind drift reuses the sun azimuth for a slant
+  rain.setIntensity(weatherRain);
+  rain.update(now / 1000, camera.position, dn.sunDir.x, dn.sunDir.z, settings.rain);
   // rebake the sky→cube env for water reflections (sky is positioned above, so bake after its update)
   if (now - lastEnvBake > 400) { envCam.position.copy(camera.position); envCam.update(renderer, scene); lastEnvBake = now; }
 

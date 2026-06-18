@@ -40,7 +40,6 @@ export class EscMenu {
       (v) => { settings.chunkRadius = v; settings.renderRadiusM = Math.round(v * 31); this.onApply?.(); },
       (v) => `${Math.round(v * 31)} m`);
     this.slider(panel, "FOV", 45, 95, 1, () => settings.fov, (v) => { settings.fov = v; this.onApply?.(); }, (v) => `${v}`);
-    this.slider(panel, "Clouds", 0, 1, 0.05, () => settings.cloudCover, (v) => (settings.cloudCover = v), (v) => `${Math.round(v * 100)}%`);
     // FPS cap: discrete steps; the top of the range means uncapped (native refresh).
     // 0..6 → 30/60/90/120/144/240/uncapped (rAF can't exceed the display refresh).
     const FPS_STEPS = [30, 60, 90, 120, 144, 240, 0];
@@ -53,6 +52,11 @@ export class EscMenu {
     // benchmark, not extra visible frames — and uses more GPU/battery.
     this.checkbox(panel, "VSync", () => settings.vsync, (v) => (settings.vsync = v));
     this.checkbox(panel, "Shadows", () => settings.shadows, (v) => { settings.shadows = v; this.onApply?.(); });
+
+    section("Weather");
+    this.checkbox(panel, "Live clouds", () => settings.weatherClouds, (v) => (settings.weatherClouds = v));
+    this.slider(panel, "Clouds", 0, 1, 0.05, () => settings.cloudCover, (v) => (settings.cloudCover = v), (v) => `${Math.round(v * 100)}%`);
+    this.checkbox(panel, "Rain", () => settings.rain, (v) => (settings.rain = v));
 
     section("Water");
     this.slider(panel, "Waves", 0, 0.6, 0.02, () => settings.waveHeight,
