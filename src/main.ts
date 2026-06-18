@@ -211,12 +211,31 @@ let weatherRain = 0;
 let weatherWetness = 0;
 const windDir = new THREE.Vector2(1, 0); // shared grass/tree sway direction
 let roster = new Map<number, RosterEntry>(); // id → {name, isPlayer} from FRAME_ROSTER
+// net "ping": snapshot inter-arrival interval, averaged over a window with min/max.
+// (The gateway is push-only — this is stream latency/jitter, not true RTT.)
+const NET_WINDOW_MS = 3000;
+const netSamples: { t: number; v: number }[] = [];
+let prevSnapAt = 0;
+let netLastCompute = 0;
+let netDisplay = "—";
 client.onSnapshot = (snap) => {
   view.applySnapshot(snap, performance.now());
   spectate.ensureTarget(view);
   weatherRain += (snap.rain - weatherRain) * 0.25;
   weatherWetness += (snap.wetness - weatherWetness) * 0.25;
   if (!rdySnap) { rdySnap = true; maybeReveal(); }
+  // sample the inter-snapshot interval; recompute the smoothed avg/min/max ~1/s
+  const tnow = performance.now();
+  if (prevSnapAt) netSamples.push({ t: tnow, v: tnow - prevSnapAt });
+  prevSnapAt = tnow;
+  const cutoff = tnow - NET_WINDOW_MS;
+  while (netSamples.length && netSamples[0].t < cutoff) netSamples.shift();
+  if (tnow - netLastCompute > 1000 && netSamples.length) {
+    netLastCompute = tnow;
+    let sum = 0, mn = Infinity, mx = 0;
+    for (const s of netSamples) { sum += s.v; if (s.v < mn) mn = s.v; if (s.v > mx) mx = s.v; }
+    netDisplay = `${Math.round(sum / netSamples.length)} (${Math.round(mn)}–${Math.round(mx)}) ms`;
+  }
 };
 client.onRoster = (r) => { roster = r; if (playerMenu.visible) playerMenu.rebuild(roster, view); };
 client.connect();
@@ -424,7 +443,6 @@ function frame(now: number) {
   // it's liveness, not true RTT.
   if (settings.showStats) {
     const fresh = client.lastSnapshotAt && now - client.lastSnapshotAt < 1000;
-    const netMs = client.lastSnapshotAt ? Math.max(0, Math.round(now - client.lastSnapshotAt)) : 0;
     const targetLabel = binfo && !binfo.isCorpse
       ? `${SPECIES_LABELS[binfo.animal] ?? "?"} #${tid} (size ${binfo.size.toFixed(1)})${aiLabel ? ` · ${aiLabel}` : ""}`
       : "—";
@@ -432,7 +450,7 @@ function frame(now: number) {
       `${status}${fresh ? "" : " (stale)"}  ${(client.bytesPerSec / 1024).toFixed(1)} KB/s  ${modelStatus}\n` +
       `${terrainStatus}  chunks ${terrain.chunkCount()}  grass ${grass.count()}\n` +
       `entities ${view.count()}   models ${models.activeCount()}   FPS ${fps.toFixed(0)}\n` +
-      `loc ${anchor.x.toFixed(0)}, ${anchor.z.toFixed(0)}   ${clock} ${phase}   net ${netMs} ms\n` +
+      `loc ${anchor.x.toFixed(0)}, ${anchor.z.toFixed(0)}   ${clock} ${phase}   net ${netDisplay}\n` +
       `target ${targetLabel}`;
   }
 
