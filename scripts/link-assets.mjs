@@ -6,7 +6,7 @@
 //
 // Run automatically via the `prebuild`/`predev` npm hooks.
 
-import { existsSync, symlinkSync, rmSync, lstatSync } from "node:fs";
+import { existsSync, symlinkSync, rmSync, lstatSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -28,6 +28,10 @@ if (!gameDir) {
   console.error(`[link-assets] no game asset dir found. Set GAME_DIR. Tried:\n  ${candidates.join("\n  ")}`);
   process.exit(1);
 }
+
+// public/ has no tracked files now (the symlinks are untracked), so a fresh
+// checkout may not contain it at all — ensure it exists before linking.
+mkdirSync(resolve(repo, "public"), { recursive: true });
 
 for (const d of dirs) {
   const link = resolve(repo, "public", d);
