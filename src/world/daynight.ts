@@ -28,6 +28,12 @@ const MOON_HORIZON: C = [0.9, 0.84, 0.98];
 const SKY_TOP_DAY: C = [0.21, 0.45, 0.85];
 const SKY_TOP_DUSK: C = [0.3, 0.26, 0.48];
 const SKY_TOP_NIGHT: C = [0.014, 0.03, 0.1];
+// World recolor tint applied to terrain/grass albedo (NOT the sky dome) — mirrors
+// day_night.gd world_sky_tint(): warm-neutral by day, orange at dusk, deep blue at
+// night, with rising strength so the ground reads the time of day like the game.
+const SKY_TINT_DAY: C = [0.58, 0.66, 0.7];
+const SKY_TINT_DUSK: C = [0.95, 0.5, 0.2];
+const SKY_TINT_NIGHT: C = [0.05, 0.08, 0.18];
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 function smoothstep(e0: number, e1: number, x: number): number {
@@ -71,6 +77,8 @@ export interface DayNightState {
   ambientColor: C;
   ambientEnergy: number;
   daylight: number;
+  skyTint: C; // terrain/grass albedo recolor (day_night.gd world_sky_tint)
+  skyTintStr: number; // 0.05 day → 0.22 dusk → 0.40 night
 }
 
 export function computeDayNight(tNorm: number): DayNightState {
@@ -99,5 +107,7 @@ export function computeDayNight(tNorm: number): DayNightState {
     ambientColor: lerpC(AMBIENT_NIGHT, AMBIENT_DAY, d),
     ambientEnergy: 0.12 + (0.26 - 0.12) * d,
     daylight: d,
+    skyTint: blend3(SKY_TINT_DAY, SKY_TINT_DUSK, SKY_TINT_NIGHT, w),
+    skyTintStr: 0.05 * w[0] + 0.22 * w[1] + 0.4 * w[2],
   };
 }

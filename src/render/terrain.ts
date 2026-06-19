@@ -8,6 +8,7 @@ import * as THREE from "three";
 import { Heightmap } from "../world/heightmap.js";
 import { VOXEL_CHUNK, VOXEL_WATER_LEVEL } from "../world/constants.js";
 import { settings } from "../settings.js";
+import { injectTerrainTint } from "./ground_tint.js";
 
 const CHUNK = VOXEL_CHUNK;
 const BUILD_PER_FRAME = 3;
@@ -42,12 +43,15 @@ export class Terrain {
   private chunks = new Map<string, THREE.Mesh>();
 
   constructor() {
-    // vertexColors on: grass faces carry the per-column water-proximity palette
-    // (mix(dry_mid, wet_mid, water_t), matching voxel_top/voxel_grass_side); dirt
-    // faces carry white so the texture shows untinted.
-    const grassTop = new THREE.MeshToonMaterial({ map: loadTex("/textures/grass_top.png"), vertexColors: true });
-    const grassSide = new THREE.MeshToonMaterial({ map: loadTex("/textures/grass_side.png"), vertexColors: true });
-    const dirt = new THREE.MeshToonMaterial({ map: loadTex("/textures/dirt.png", true), vertexColors: true });
+    // Live tinting is done in-shader (injectTerrainTint) from a per-vertex aBank
+    // factor + shared weather/biome/day-night uniforms — so vertexColors is off
+    // and the dry↔wet palette, POI biome mask, and sky_tint all update per frame
+    // without rebuilding chunks. aBank<0 on dirt/sand faces skips the grass
+    // palette + POI (keeps the plain texture) but still takes the sky_tint.
+    const grassTop = new THREE.MeshToonMaterial({ map: loadTex("/textures/grass_top.png") });
+    const grassSide = new THREE.MeshToonMaterial({ map: loadTex("/textures/grass_side.png") });
+    const dirt = new THREE.MeshToonMaterial({ map: loadTex("/textures/dirt.png", true) });
+    for (const m of [grassTop, grassSide, dirt]) injectTerrainTint(m);
     this.mats = [grassTop, grassSide, dirt]; // group indices 0/1/2 (water is its own module)
   }
 
@@ -91,21 +95,20 @@ export class Terrain {
     const pos: number[] = [];
     const nrm: number[] = [];
     const uv: number[] = [];
-    const col: number[] = [];
+    const bank: number[] = []; // per-vertex water-bank factor (grass), or -1 (dirt/sand)
     const idx: number[][] = [[], [], []]; // 0 grass_top, 1 grass_side, 2 dirt
     const x0 = cx * CHUNK, z0 = cz * CHUNK;
-    const WHITE: [number, number, number] = [1, 1, 1];
 
     const face = (
       verts: [number, number, number][], n: [number, number, number],
-      uvs: number[][], mat: number, c: [number, number, number],
+      uvs: number[][], mat: number, b: number,
     ) => {
       const base = pos.length / 3;
       for (let k = 0; k < 4; k++) {
         pos.push(verts[k][0], verts[k][1], verts[k][2]);
         nrm.push(n[0], n[1], n[2]);
         uv.push(uvs[k][0], uvs[k][1]);
-        col.push(c[0], c[1], c[2]);
+        bank.push(b);
       }
       idx[mat].push(base, base + 1, base + 2, base, base + 2, base + 3);
     };
@@ -118,29 +121,30 @@ export class Terrain {
         const underwater = h < VOXEL_WATER_LEVEL;
         const topMat = underwater ? 2 : 0;
         const sideMat = underwater ? 2 : 1;
-        // grass faces tint by water proximity; dirt (underwater) stays neutral
-        const pal: [number, number, number] = underwater ? WHITE : hm.grassGroundColor(x, z);
+        // grass faces carry the water-bank proximity factor (shader applies the
+        // live dry↔wet palette); dirt/sand (underwater) carry -1 → no grass tint
+        const b: number = underwater ? -1 : hm.grassBankFactor(x, z);
 
         // top quad — wound CCW from above so the normal points +Y (else the
         // FrontSide material backface-culls it and tops vanish)
         face(
           [[x, top, z], [x, top, z + 1], [x + 1, top, z + 1], [x + 1, top, z]],
-          [0, 1, 0], TOPUV[hashRot(x, z)], topMat, pal,
+          [0, 1, 0], TOPUV[hashRot(x, z)], topMat, b,
         );
 
         // exposed cliff sides; grass_side stretches full texture, dirt tiles per block
         const npx = hm.heightAt(x + 1, z);
         if (npx < h) face([[x + 1, npx + 1, z], [x + 1, top, z], [x + 1, top, z + 1], [x + 1, npx + 1, z + 1]],
-          [1, 0, 0], this.sideUV2(underwater ? top - (npx + 1) : 1.0, "ab"), sideMat, pal);
+          [1, 0, 0], this.sideUV2(underwater ? top - (npx + 1) : 1.0, "ab"), sideMat, b);
         const nnx = hm.heightAt(x - 1, z);
         if (nnx < h) face([[x, nnx + 1, z], [x, nnx + 1, z + 1], [x, top, z + 1], [x, top, z]],
-          [-1, 0, 0], this.sideUV2(underwater ? top - (nnx + 1) : 1.0, "bb"), sideMat, pal);
+          [-1, 0, 0], this.sideUV2(underwater ? top - (nnx + 1) : 1.0, "bb"), sideMat, b);
         const npz = hm.heightAt(x, z + 1);
         if (npz < h) face([[x, npz + 1, z + 1], [x + 1, npz + 1, z + 1], [x + 1, top, z + 1], [x, top, z + 1]],
-          [0, 0, 1], this.sideUV2(underwater ? top - (npz + 1) : 1.0, "bb"), sideMat, pal);
+          [0, 0, 1], this.sideUV2(underwater ? top - (npz + 1) : 1.0, "bb"), sideMat, b);
         const nnz = hm.heightAt(x, z - 1);
         if (nnz < h) face([[x, nnz + 1, z], [x, top, z], [x + 1, top, z], [x + 1, nnz + 1, z]],
-          [0, 0, -1], this.sideUV2(underwater ? top - (nnz + 1) : 1.0, "ab"), sideMat, pal);
+          [0, 0, -1], this.sideUV2(underwater ? top - (nnz + 1) : 1.0, "ab"), sideMat, b);
       }
     }
 
@@ -148,7 +152,7 @@ export class Terrain {
     geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
     geo.setAttribute("normal", new THREE.Float32BufferAttribute(nrm, 3));
     geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
-    geo.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+    geo.setAttribute("aBank", new THREE.Float32BufferAttribute(bank, 1));
     const merged = idx[0].concat(idx[1], idx[2]);
     geo.setIndex(merged);
     let off = 0;

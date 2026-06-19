@@ -96,6 +96,12 @@ export class Heightmap {
     return (1 - Math.min(1, d / GRASS_WATER_GREEN_FALLOFF)) * GRASS_TINT_WATER_SCALE;
   }
 
+  /** Raw water-bank proximity 0(dry)..1(at water), unscaled — the water_bank_mask.r
+   *  the live ground shader needs so it can apply the seasonal (1-dryness) gate. */
+  grassBankFactor(x: number, z: number): number {
+    return 1 - Math.min(1, this.waterDistAt(x, z) / GRASS_WATER_GREEN_FALLOFF);
+  }
+
   /** Ground voxel grass palette = mix(dry_mid, wet_mid, water_t) (voxel_top/side shaders). */
   grassGroundColor(x: number, z: number): [number, number, number] {
     return lerp3(GRASS_DRY_MID, GRASS_WET_MID, this.grassWaterT(x, z));

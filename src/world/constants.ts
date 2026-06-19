@@ -65,6 +65,21 @@ export const GRASS_WATER_GREEN_FALLOFF = 30.0; // greenness fades beyond 30 m fr
 export const GRASS_DRY_MID: [number, number, number] = [0.97, 0.89, 0.38];
 export const GRASS_WET_MID: [number, number, number] = [0.56, 1.005, 0.26];
 
+// --- biome / POI tint (named-POI region recolor, mirrors net.gd _poi_kind_tint
+//     + _build_poi_tint_mask + voxel_top.gdshader). Absolute albedo multipliers
+//     per POI kind, blended into the grass base by a world-space influence mask. ---
+export const POI_KIND_TINT: Record<string, [number, number, number]> = {
+  pond: [0.50, 0.50, 0.26],        // damp olive shore
+  grove: [0.42, 0.34, 0.20],       // shaded leaf-litter brown
+  lonely_tree: [0.58, 0.48, 0.28], // mid-tan around a solitary tree
+  meadow: [0.80, 0.68, 0.32],      // straw gold tall-grass
+  ridge: [0.80, 0.55, 0.26],       // ochre dust / exposed earth
+};
+export const POI_TINT_DEFAULT: [number, number, number] = [0.55, 0.46, 0.26];
+export const POI_TINT_STRENGTH = 0.55;     // voxel_top.gdshader poi_strength
+export const POI_TINT_RADIUS_SCALE = 3.5;  // net.gd: region radius = gameplay radius × 3.5
+export const POI_TINT_MASK_SIZE = 256;     // _POI_TINT_MASK_SIZE
+
 // --- snapshot interpolation ---
 // Render at now - INTERP_DELAY so there's always a newer sample to interpolate
 // toward (snapshots arrive at 20 Hz / 50 ms). Mirrors the native client's

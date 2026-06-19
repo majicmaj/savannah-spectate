@@ -23,6 +23,8 @@ import { AudioSys } from "./render/audio.js";
 import { settings } from "./settings.js";
 import { Heightmap } from "./world/heightmap.js";
 import { computeDayNight, CYCLE_SECONDS } from "./world/daynight.js";
+import { decodeWorldInit } from "./world/world_init.js";
+import { setPoiMask, updateGroundTint } from "./render/ground_tint.js";
 import {
   WORLD_SIZE, SPECIES_LABELS, AI_STATE_LABELS, SPECTATE_GATEWAY_PORT, SPECTATE_GATEWAY_WSS, RENDER_RADIUS_M, VOXEL_HEIGHT_BASE,
 } from "./world/constants.js";
@@ -199,6 +201,11 @@ client.onTime = (t) => { timeOfDay = t; timeRecvAt = performance.now(); };
 let serverTrees: import("./net/gateway_client.js").TreeXform[] | null = null;
 let heightmapAt = 0;
 client.onTrees = (t) => { serverTrees = t.length ? t : null; };
+// Named POIs (biome regions) → build the ground tint mask the terrain shader samples.
+client.onWorldInit = (payload) => {
+  const wi = decodeWorldInit(payload);
+  if (wi) setPoiMask(wi.pois);
+};
 client.onHeightmap = (payload) => {
   heightmapAt = performance.now();
   heightmap.ingest(payload);
@@ -364,6 +371,7 @@ function frame(now: number) {
 
   // day/night — extrapolate time-of-day, drive sun/moon/sky/fog/ambient
   const dn = computeDayNight(tNorm);
+  updateGroundTint(dn, weatherWetness); // live season/weather + day/night ground tint
   const anchor = targetPos ?? new THREE.Vector3(0, VOXEL_HEIGHT_BASE, 0);
   sun.color.setRGB(dn.sunColor[0], dn.sunColor[1], dn.sunColor[2]);
   sun.intensity = dn.sunEnergy * 3.0;

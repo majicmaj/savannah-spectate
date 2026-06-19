@@ -18,6 +18,7 @@ import {
   GRASS_TINT_DRY_A, GRASS_TINT_DRY_B, GRASS_TINT_WET_A, GRASS_TINT_WET_B,
 } from "../world/constants.js";
 import { settings } from "../settings.js";
+import { grassTintFragment, grassTintUniformDecl, bindGrassTint } from "./ground_tint.js";
 
 const SPACING = 4.5;
 const CAP = 14000;
@@ -163,6 +164,7 @@ export class Grass {
       shader.uniforms.uTime = this.wind.uTime;
       shader.uniforms.uWindDir = this.wind.uWindDir;
       shader.uniforms.uWindStr = this.wind.uWindStr;
+      bindGrassTint(shader); // live weather + day/night tint uniforms (shared)
       shader.vertexShader =
         "attribute float instAlpha;\nvarying float vInstAlpha;\nuniform float uTime, uWindStr;\nuniform vec2 uWindDir;\n" +
         shader.vertexShader;
@@ -183,9 +185,11 @@ export class Grass {
     transformed.y -= (_lean * _lean * 0.3) / _sy;            // foreshorten (arc-length)
     transformed.x += (sin(uTime * 4.5 + _iwp.x * 0.5 + _iwp.z * 0.5) * 0.05 * _hf * uWindStr) / _sx; // flutter
   }`);
-      shader.fragmentShader = "varying float vInstAlpha;\n" + shader.fragmentShader;
+      shader.fragmentShader =
+        "varying float vInstAlpha;\n" + grassTintUniformDecl() + shader.fragmentShader;
       shader.fragmentShader = shader.fragmentShader.replace(
-        "#include <map_fragment>", "#include <map_fragment>\n  diffuseColor.a *= vInstAlpha;");
+        "#include <map_fragment>",
+        "#include <map_fragment>\n  diffuseColor.a *= vInstAlpha;" + grassTintFragment());
     };
 
     this.mesh = new THREE.InstancedMesh(geo, mat, CAP);
