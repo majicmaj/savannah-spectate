@@ -159,8 +159,10 @@ export class WorldView {
     }
     for (const [cid, c] of snap.c) {
       const id = 0x40000000 | cid;
-      const [x, z, size, meat, cyaw] = c;
-      const cy = this.hm?.loaded ? this.hm.surfaceAt(x, z) : 0; // ground the corpse
+      const [x, z, size, meat, cyaw, , alt] = c;
+      // v43: lift a FALLING carcass by its wire altitude; interp animates the
+      // descent. alt is 0 for at-rest corpses (the common case).
+      const cy = (this.hm?.loaded ? this.hm.surfaceAt(x, z) : 0) + (alt || 0);
       this.pushSample(id, nowMs, x, cy, z, cyaw, -1, size, {
         aiState: 0, sleeping: false, flightMode: 0, isFemale: false, isCorpse: true, meat, hp: 0,
         hpMax: 0, stamina: 0, thirst: 0, hunger: 0, sleep: 0, sizeRoll: 1,

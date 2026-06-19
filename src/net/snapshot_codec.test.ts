@@ -90,6 +90,7 @@ w.u8(packSizeU8(5.0)); // size
 w.u8(128); // meat_ratio
 w.u8(packYawU8(2.0)); // yaw
 w.u8(5); // age_ds
+w.u8(Math.round((12.0 / 40.0) * 255)); // v43: alt = 12 m (falling carcass)
 // group roster
 w.u16(0); // n_g
 
@@ -130,6 +131,7 @@ near("corpse size", co[2], 5.0, 0.1);
 near("corpse meat", co[3], 128 / 255, 0.01);
 near("corpse yaw", co[4], 2.0, 0.03);
 eq("corpse age", co[5], 5);
+near("corpse alt", co[6], 12.0, 0.2);
 
 if (failures > 0) {
   console.error(`\n${failures} assertion(s) failed`);

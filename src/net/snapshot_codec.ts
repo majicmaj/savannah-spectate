@@ -5,14 +5,14 @@
 // MUST stay in lockstep with the game's SnapshotCodec.SNAPSHOT_VERSION. The
 // gateway tags each snapshot frame and the server rejects mismatched clients;
 // here we surface a console error and drop the packet (mirrors push_error).
-//   source SNAPSHOT_VERSION: 42 (snapshot_codec.gd:28)
+//   source SNAPSHOT_VERSION: 43 (snapshot_codec.gd:28)
 
 import { ByteReader } from "./stream.js";
 import { WORLD_SIZE, WORLD_HALF } from "../world/constants.js";
 
-export const SNAPSHOT_VERSION = 42;
+export const SNAPSHOT_VERSION = 43;
 export const FOOD_EVENTS_VERSION = 3;
-export const ITEM_EVENTS_VERSION = 1;
+export const ITEM_EVENTS_VERSION = 2;
 
 const MAX_DECODE_N = 8192; // snapshot_codec.gd:25
 
@@ -24,6 +24,8 @@ const SIZE_RANGE = 24.0;
 const HP_RANGE = 1024.0;
 const HEAD_YAW_MAX = Math.PI / 2;
 const HEAD_PITCH_MAX = Math.PI / 2;
+const ALT_RANGE = 40.0; // drop-physics altitude (v43 corpse byte / item-events v2)
+const VEL_RANGE = 64.0; // drop-physics velocity component (item-events v2 ballistic seed)
 
 // --- unpack helpers (mirror snapshot_codec.gd) ---
 export const unpackPosXZ = (u: number) => (u / POS_QUANT_RANGE) * WORLD_SIZE - WORLD_HALF;
@@ -34,6 +36,8 @@ export const unpackUnit = (u: number) => u / 255.0;
 export const unpackSize = (u: number) => (u / POS_QUANT_RANGE) * SIZE_RANGE;
 export const unpackHp = (u: number) => (u / POS_QUANT_RANGE) * HP_RANGE;
 export const unpackSizeU8 = (u: number) => (u / 255.0) * SIZE_RANGE;
+export const unpackAltU8 = (u: number) => (u / 255.0) * ALT_RANGE;
+export const unpackVelU16 = (u: number) => (u / POS_QUANT_RANGE) * (2.0 * VEL_RANGE) - VEL_RANGE;
 export function unpackHead(u: number): { yaw: number; pitch: number } {
   return {
     yaw: (((u >> 8) & 0xff) / 255.0 * 2.0 - 1.0) * HEAD_YAW_MAX,
@@ -115,7 +119,7 @@ function decodePCold(buf: ByteReader): Record<number, any> {
 
 export interface DecodedSnapshot {
   p: Map<number, any[]>;
-  c: Map<number, [number, number, number, number, number, number]>; // x,z,size,meat,yaw,age_ds
+  c: Map<number, [number, number, number, number, number, number, number]>; // x,z,size,meat,yaw,age_ds,alt
   g: Map<number, any[]>; // [animal, name, px, pz, size, hp, hp_max, ai_code, sleeping]
   ackSeq: number;
   isKeyframe: boolean;
@@ -189,9 +193,9 @@ export function decodeSnapshot(bytes: Uint8Array, baselinePlayers?: Map<number, 
     p.set(id, arr);
   }
 
-  const c: Map<number, [number, number, number, number, number, number]> = new Map();
+  const c: Map<number, [number, number, number, number, number, number, number]> = new Map();
   n = buf.getU16();
-  if (!checkDecodeN(n, 12, buf, "snapshot.corpses")) return null;
+  if (!checkDecodeN(n, 13, buf, "snapshot.corpses")) return null;
   for (let i = 0; i < n; i++) {
     const id = buf.getU32();
     const x = unpackPosXZ(buf.getU16());
@@ -200,7 +204,8 @@ export function decodeSnapshot(bytes: Uint8Array, baselinePlayers?: Map<number, 
     const meatRatio = buf.getU8() / 255.0;
     const cyaw = unpackYawU8(buf.getU8());
     const ageDs = buf.getU8();
-    c.set(id, [x, z, size, meatRatio, cyaw, ageDs]);
+    const alt = unpackAltU8(buf.getU8()); // v43: fall height above ground (0 at rest)
+    c.set(id, [x, z, size, meatRatio, cyaw, ageDs, alt]);
   }
 
   const g: Map<number, any[]> = new Map();
@@ -242,19 +247,36 @@ export function decodeFoodEvents(bytes: Uint8Array): { added: [number, number][]
   return { added, scaled };
 }
 
-// snapshot_codec.gd:853 decode_item_events → {added: [id,x,z,kind], removed: [id]}
-export function decodeItemEvents(bytes: Uint8Array): { added: [number, number, number, number][]; removed: number[] } {
-  const empty = { added: [] as [number, number, number, number][], removed: [] as number[] };
+// snapshot_codec.gd:853 decode_item_events → {added: [id,x,z,kind,alt,vx,vz,vy], removed: [id]}
+// v2: each add carries a drop-physics ballistic seed (alt u8 + vx/vz/vy u16, 16 B);
+// resting items send alt=0 + zero velocity → instant ground settle (legacy).
+export function decodeItemEvents(bytes: Uint8Array): {
+  added: [number, number, number, number, number, number, number, number][];
+  removed: number[];
+} {
+  type Add = [number, number, number, number, number, number, number, number];
+  const empty = { added: [] as Add[], removed: [] as number[] };
   if (bytes.byteLength < 1) return empty;
   const buf = new ByteReader(bytes);
   if (buf.getU8() !== ITEM_EVENTS_VERSION) {
     console.error("[spectate] item_events version mismatch");
     return empty;
   }
-  const added: [number, number, number, number][] = [];
+  const added: Add[] = [];
   let n = buf.getU16();
-  if (!checkDecodeN(n, 9, buf, "item_events.added")) return empty;
-  for (let i = 0; i < n; i++) added.push([buf.getU32(), unpackPosXZ(buf.getU16()), unpackPosXZ(buf.getU16()), buf.getU8()]);
+  if (!checkDecodeN(n, 16, buf, "item_events.added")) return empty;
+  for (let i = 0; i < n; i++) {
+    added.push([
+      buf.getU32(),
+      unpackPosXZ(buf.getU16()),
+      unpackPosXZ(buf.getU16()),
+      buf.getU8(),
+      unpackAltU8(buf.getU8()), // v2: drop altitude above ground (0 at rest)
+      unpackVelU16(buf.getU16()), // vx
+      unpackVelU16(buf.getU16()), // vz
+      unpackVelU16(buf.getU16()), // vy
+    ]);
+  }
   const removed: number[] = [];
   n = buf.getU16();
   if (!checkDecodeN(n, 4, buf, "item_events.removed")) return { added, removed: [] };
