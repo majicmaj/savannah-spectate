@@ -10,15 +10,47 @@ const FRAME_WORLD_INIT = 2;
 const FRAME_WORLD_HEIGHTS = 3;
 const FRAME_TIME = 4;
 const FRAME_ROSTER = 5;
+const FRAME_WORLD_TREES = 6;
 
 export interface RosterEntry { name: string; isPlayer: boolean; }
 export type RosterListener = (roster: Map<number, RosterEntry>) => void;
+
+// One acacia from the server's authoritative TreeGen set (matches _spawn_trees).
+export interface TreeXform { x: number; z: number; s: number; sy: number; ry: number; tx: number; tz: number; }
+export type TreesListener = (trees: TreeXform[]) => void;
 
 export type SnapshotListener = (snap: DecodedSnapshot) => void;
 export type WorldInitListener = (payload: Uint8Array) => void;
 export type HeightmapListener = (payload: Uint8Array) => void;
 export type TimeListener = (timeOfDay: number) => void;
 export type StatusListener = (status: "connecting" | "open" | "closed") => void;
+
+// FRAME_WORLD_TREES: [u8 ver=1][u16 count] then per tree 7×f32 (x,z,s,sy,ry,tx,tz), little-endian.
+// Sent once on connect; lets the viewer match the game's exact forest instead of
+// approximating with its own PRNG.
+function decodeTrees(payload: Uint8Array): TreeXform[] {
+  const out: TreeXform[] = [];
+  if (payload.byteLength < 3) return out;
+  const dv = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+  let o = 0;
+  const ver = dv.getUint8(o); o += 1;
+  if (ver !== 1) { console.error(`[spectate] world_trees version mismatch: got ${ver}`); return out; }
+  const count = dv.getUint16(o, true); o += 2;
+  for (let i = 0; i < count; i++) {
+    if (o + 28 > payload.byteLength) break;
+    out.push({
+      x: dv.getFloat32(o, true),
+      z: dv.getFloat32(o + 4, true),
+      s: dv.getFloat32(o + 8, true),
+      sy: dv.getFloat32(o + 12, true),
+      ry: dv.getFloat32(o + 16, true),
+      tx: dv.getFloat32(o + 20, true),
+      tz: dv.getFloat32(o + 24, true),
+    });
+    o += 28;
+  }
+  return out;
+}
 
 // FRAME_ROSTER: [u16 count] then per entity [u32 id][u8 flags][u8 nameLen][name UTF-8]
 function decodeRoster(payload: Uint8Array): Map<number, RosterEntry> {
@@ -52,6 +84,7 @@ export class GatewayClient {
   onHeightmap: HeightmapListener | null = null;
   onTime: TimeListener | null = null;
   onRoster: RosterListener | null = null;
+  onTrees: TreesListener | null = null;
   onStatus: StatusListener | null = null;
 
   // diagnostics
@@ -117,6 +150,8 @@ export class GatewayClient {
       }
     } else if (type === FRAME_ROSTER) {
       this.onRoster?.(decodeRoster(payload));
+    } else if (type === FRAME_WORLD_TREES) {
+      this.onTrees?.(decodeTrees(payload));
     }
   }
 

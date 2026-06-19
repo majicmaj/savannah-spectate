@@ -1,13 +1,14 @@
 // Acacia trees: the GLB is static (no animation) and ~93 part-meshes, so we bake
 // it into one merged geometry per material and render all trees as a single
-// InstancedMesh (1-2 draw calls total). Positions use a seeded RNG scatter on
-// land (approximate — not the exact TreeGen set, but the same look), rejecting
-// underwater cells via the streamed heightmap.
+// InstancedMesh (1-2 draw calls total). The authoritative positions come from
+// the gateway (placeExact) so the forest matches the game's seeded TreeGen + POI
+// groves exactly; place() is a PRNG fallback used only against an old gateway.
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Heightmap } from "../world/heightmap.js";
+import type { TreeXform } from "../net/gateway_client.js";
 import {
   TREE_SEED, TREE_COUNT, TREE_MODEL, WORLD_HALF, VOXEL_WATER_LEVEL,
 } from "../world/constants.js";
@@ -162,5 +163,51 @@ export class Trees {
     }
     this.placed = true;
     console.log(`[trees] placed ${placed} acacias (baseScale ${this.baseScale.toFixed(3)})`);
+  }
+
+  get isPlaced(): boolean { return this.placed; }
+
+  /** Place trees from the server's authoritative TreeGen set (exact positions,
+   *  per-tree non-uniform scale + yaw + tilt) so the forest lines up with the
+   *  game. Mirrors the _spawn_trees basis: yaw(Y) → tilt(X,Z) → scale(s,sy,s). */
+  placeExact(trees: TreeXform[], hm: Heightmap): void {
+    if (!hm.loaded || this.instMeshes.length === 0 || trees.length === 0) return;
+    this.ensureCapacity(trees.length);
+    const dummy = new THREE.Object3D();
+    dummy.rotation.order = "YXZ"; // yaw first, then small tilt — tilt is ~±0.08 rad
+    const xforms: THREE.Matrix4[] = [];
+    for (const t of trees) {
+      dummy.position.set(t.x, hm.surfaceAt(t.x, t.z), t.z);
+      dummy.rotation.set(t.tx, t.ry, t.tz);
+      dummy.scale.set(t.s * this.baseScale, t.sy * this.baseScale, t.s * this.baseScale);
+      dummy.updateMatrix();
+      xforms.push(dummy.matrix.clone());
+    }
+    for (const inst of this.instMeshes) {
+      for (let i = 0; i < xforms.length; i++) inst.setMatrixAt(i, xforms[i]);
+      inst.count = xforms.length;
+      inst.instanceMatrix.needsUpdate = true;
+    }
+    this.placed = true;
+    console.log(`[trees] placed ${trees.length} acacias from server (exact)`);
+  }
+
+  // The server forest (TreeGen + POI groves) can exceed the load()-time capacity;
+  // grow each InstancedMesh in place, reusing the merged geometry + sway material.
+  private ensureCapacity(n: number): void {
+    if (this.instMeshes.length === 0) return;
+    if (n <= this.instMeshes[0].instanceMatrix.count) return;
+    const fresh: THREE.InstancedMesh[] = [];
+    for (const old of this.instMeshes) {
+      const inst = new THREE.InstancedMesh(old.geometry, old.material, n);
+      inst.castShadow = true;
+      inst.frustumCulled = false;
+      inst.count = 0;
+      this.group.remove(old);
+      old.dispose();
+      this.group.add(inst);
+      fresh.push(inst);
+    }
+    this.instMeshes = fresh;
   }
 }

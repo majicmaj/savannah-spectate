@@ -194,7 +194,13 @@ let timeRecvAt = performance.now();
 const client = new GatewayClient(gatewayUrl());
 client.onStatus = (s) => (status = s);
 client.onTime = (t) => { timeOfDay = t; timeRecvAt = performance.now(); };
+// Authoritative tree set from the gateway — exact positions matching the game's
+// TreeGen + POI groves. Stored until the heightmap is in (needed to ground them).
+let serverTrees: import("./net/gateway_client.js").TreeXform[] | null = null;
+let heightmapAt = 0;
+client.onTrees = (t) => { serverTrees = t.length ? t : null; };
 client.onHeightmap = (payload) => {
+  heightmapAt = performance.now();
   heightmap.ingest(payload);
   terrain.setHeightmap(heightmap);
   grass.setHeightmap(heightmap);
@@ -316,7 +322,12 @@ function frame(now: number) {
     lastCenterSent = now;
   }
 
-  if (treesLoaded && heightmap.loaded) trees.place(heightmap);
+  // Prefer the server's exact forest; fall back to the PRNG scatter only if no
+  // tree frame has arrived ~1.5 s after the heightmap (i.e. an old gateway).
+  if (treesLoaded && heightmap.loaded && !trees.isPlaced) {
+    if (serverTrees) trees.placeExact(serverTrees, heightmap);
+    else if (heightmapAt && performance.now() - heightmapAt > 1500) trees.place(heightmap);
+  }
 
   // 2. models use the fresh positions; set suppression for next frame's capsules
   models.update(dt, targetPos, view.entities());
