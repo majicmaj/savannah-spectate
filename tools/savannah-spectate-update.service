@@ -1,0 +1,30 @@
+# Oneshot unit fired by savannah-spectate-update.timer. Runs poll-deploy.sh,
+# which fetches origin/main and rebuilds the viewer when there are new commits.
+#
+# No sudo / no service restart: the viewer is static files served by Caddy from
+# dist/, so a rebuild is the whole deploy. (Contrast the game's
+# savanah-update.service, which must `sudo systemctl restart savanah`.)
+#
+# Install on the box (one-time) — tools/install-autodeploy.sh does this for you:
+#   sudo cp tools/savannah-spectate-update.service /etc/systemd/system/
+#   sudo cp tools/savannah-spectate-update.timer   /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now savannah-spectate-update.timer
+
+[Unit]
+Description=Pull origin/main and rebuild the savannah spectate viewer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=majd
+Group=majd
+WorkingDirectory=/home/majd/savannah-spectate
+ExecStart=/home/majd/savannah-spectate/tools/poll-deploy.sh
+# A build should finish in seconds; if npm ever hangs, kill it so the next tick
+# retries from a clean slate.
+TimeoutStartSec=600
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=savannah-spectate-update

@@ -1,0 +1,23 @@
+# systemd timer that polls origin/main every ~2 min and rebuilds the spectate
+# viewer when there are new commits. Reference unit — install on the box at
+# /etc/systemd/system/savannah-spectate-update.timer (paired with the .service),
+# then:
+#
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now savannah-spectate-update.timer
+#   systemctl list-timers savannah-spectate-update.timer
+#
+# poll-deploy.sh is a no-op when origin/main hasn't moved, so the timer can fire
+# without rebuilding needlessly. 2 min is plenty for a spectate viewer.
+
+[Unit]
+Description=Poll origin/main and rebuild the savannah spectate viewer on new commits
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+AccuracySec=15s
+Unit=savannah-spectate-update.service
+
+[Install]
+WantedBy=timers.target
