@@ -158,7 +158,25 @@ escMenu.onApply = applySettings;
 applySettings();
 
 const playerMenu = new PlayerMenu();
-playerMenu.onSpectate = (id) => spectate.setTarget(id);
+playerMenu.onSpectate = (id) => { spectate.setTarget(id); playerMenu.hide(); };
+
+// Unobtrusive on-screen prev/next target buttons (bottom-right) — primarily for
+// touch, where there are no [ / ] keys. Small + semi-transparent so they don't
+// obstruct the view; pointerdown (not click) so they respond on the first tap.
+function navButton(label: string, right: number, dir: number): void {
+  const b = document.createElement("button");
+  b.textContent = label;
+  b.style.cssText =
+    `position:fixed;bottom:14px;right:${right}px;z-index:16;width:38px;height:38px;` +
+    "border-radius:9px;border:1px solid #f8b95c44;background:rgba(16,21,27,0.5);" +
+    "color:#f8b95c;font:20px/1 ui-monospace,Menlo,monospace;opacity:0.55;cursor:pointer;" +
+    "touch-action:manipulation;-webkit-tap-highlight-color:transparent;padding:0;";
+  const fire = (e: Event) => { e.preventDefault(); e.stopPropagation(); spectate.step(view, dir); };
+  b.addEventListener("pointerdown", fire);
+  document.body.appendChild(b);
+}
+navButton("‹", 60, -1); // prev
+navButton("›", 14, +1); // next
 
 const audio = new AudioSys();
 audio.attach(camera);
@@ -279,14 +297,62 @@ window.addEventListener("keyup", (e) => {
   else if (e.key === "ArrowUp") spectate.arrows.up = false;
   else if (e.key === "ArrowDown") spectate.arrows.down = false;
 });
-let dragX = 0, dragY = 0;
-canvas.addEventListener("mousedown", (e) => { spectate.dragging = true; dragX = e.clientX; dragY = e.clientY; });
-window.addEventListener("mousemove", (e) => {
-  if (!spectate.dragging) return;
-  spectate.dragOrbit(e.clientX - dragX, e.clientY - dragY);
-  dragX = e.clientX; dragY = e.clientY;
+// Unified pointer input (mouse + touch): one finger/button drags to pan; two
+// fingers pinch to zoom. A clean touch tap (little movement, brief) toggles the
+// spectate player menu — tap empty space to open, tap again (or tap the dim area)
+// to close — so mobile users can pick a player without a keyboard. Desktop mouse
+// taps are NOT hijacked (Tab still opens the menu there).
+const pointers = new Map<number, { x: number; y: number }>();
+let dragLastX = 0, dragLastY = 0;
+let tapMoved = 0, tapStartT = 0, tapType = "mouse";
+let pinchPrev = 0;
+canvas.addEventListener("pointerdown", (e) => {
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  canvas.setPointerCapture?.(e.pointerId);
+  if (pointers.size === 1) {
+    spectate.dragging = true;
+    dragLastX = e.clientX; dragLastY = e.clientY;
+    tapMoved = 0; tapStartT = performance.now(); tapType = e.pointerType;
+  } else if (pointers.size === 2) {
+    spectate.dragging = false; // second finger → pinch, not orbit
+    const p = [...pointers.values()];
+    pinchPrev = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+    tapMoved = 1e9; // a multi-touch gesture is never a tap
+  }
 });
-window.addEventListener("mouseup", () => { spectate.dragging = false; });
+window.addEventListener("pointermove", (e) => {
+  if (!pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pointers.size >= 2) {
+    const p = [...pointers.values()];
+    const d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+    if (pinchPrev > 0) spectate.zoom((pinchPrev - d) * 2.2); // spread = zoom in
+    pinchPrev = d;
+    return;
+  }
+  if (!spectate.dragging) return;
+  const dx = e.clientX - dragLastX, dy = e.clientY - dragLastY;
+  tapMoved += Math.abs(dx) + Math.abs(dy);
+  spectate.dragOrbit(dx, dy);
+  dragLastX = e.clientX; dragLastY = e.clientY;
+});
+const endPointer = (e: PointerEvent) => {
+  if (!pointers.has(e.pointerId)) return;
+  pointers.delete(e.pointerId);
+  if (pointers.size === 0) {
+    spectate.dragging = false;
+    // touch tap → toggle the player menu (open on empty space, close if open)
+    if (tapType !== "mouse" && tapMoved < 10 && performance.now() - tapStartT < 350) {
+      if (playerMenu.visible) playerMenu.hide();
+      else playerMenu.show(roster, view);
+    }
+  } else if (pointers.size === 1) {
+    const p = [...pointers.values()][0]; // lifted one finger of a pinch → resume drag
+    dragLastX = p.x; dragLastY = p.y; spectate.dragging = true; pinchPrev = 0;
+  }
+};
+window.addEventListener("pointerup", endPointer);
+window.addEventListener("pointercancel", endPointer);
 window.addEventListener("wheel", (e) => spectate.zoom(e.deltaY), { passive: true });
 window.addEventListener("resize", () => {
   camera.aspect = window.innerWidth / window.innerHeight;
