@@ -5,14 +5,19 @@
 // MUST stay in lockstep with the game's SnapshotCodec.SNAPSHOT_VERSION. The
 // gateway tags each snapshot frame and the server rejects mismatched clients;
 // here we surface a console error and drop the packet (mirrors push_error).
-//   source SNAPSHOT_VERSION: 43 (snapshot_codec.gd:28)
+//   source SNAPSHOT_VERSION: 44 (snapshot_codec.gd:28)
 
 import { ByteReader } from "./stream.js";
 import { WORLD_SIZE, WORLD_HALF } from "../world/constants.js";
 
-export const SNAPSHOT_VERSION = 43;
+// v44: latch-grab semantic bump (grab_role bit 1 = is_latch). NO snapshot
+//   byte-layout change vs v43 — the role bits already ride grab_role<<2 — so
+//   decoding is identical; we only bump the gate so old viewers fail loud.
+export const SNAPSHOT_VERSION = 44;
 export const FOOD_EVENTS_VERSION = 3;
-export const ITEM_EVENTS_VERSION = 2;
+// v3: each item-events `added` entry appends tree-fruit flags u8 + age u8
+//   (18 B/add, was 16 in v2). See snapshot_codec.gd:39.
+export const ITEM_EVENTS_VERSION = 3;
 
 const MAX_DECODE_N = 8192; // snapshot_codec.gd:25
 
@@ -247,14 +252,16 @@ export function decodeFoodEvents(bytes: Uint8Array): { added: [number, number][]
   return { added, scaled };
 }
 
-// snapshot_codec.gd:853 decode_item_events → {added: [id,x,z,kind,alt,vx,vz,vy], removed: [id]}
+// snapshot_codec.gd:853 decode_item_events → {added: [id,x,z,kind,alt,vx,vz,vy,flags,age], removed: [id]}
 // v2: each add carries a drop-physics ballistic seed (alt u8 + vx/vz/vy u16, 16 B);
 // resting items send alt=0 + zero velocity → instant ground settle (legacy).
+// v3: appends tree-fruit flags u8 + age u8 (18 B/add).
 export function decodeItemEvents(bytes: Uint8Array): {
-  added: [number, number, number, number, number, number, number, number][];
+  added: [number, number, number, number, number, number, number, number, number, number][];
   removed: number[];
 } {
-  type Add = [number, number, number, number, number, number, number, number];
+  // [id, x, z, kind, alt, vx, vz, vy, flags, age] — flags+age are v3 (18 B/add).
+  type Add = [number, number, number, number, number, number, number, number, number, number];
   const empty = { added: [] as Add[], removed: [] as number[] };
   if (bytes.byteLength < 1) return empty;
   const buf = new ByteReader(bytes);
@@ -264,7 +271,7 @@ export function decodeItemEvents(bytes: Uint8Array): {
   }
   const added: Add[] = [];
   let n = buf.getU16();
-  if (!checkDecodeN(n, 16, buf, "item_events.added")) return empty;
+  if (!checkDecodeN(n, 18, buf, "item_events.added")) return empty;
   for (let i = 0; i < n; i++) {
     added.push([
       buf.getU32(),
@@ -275,6 +282,8 @@ export function decodeItemEvents(bytes: Uint8Array): {
       unpackVelU16(buf.getU16()), // vx
       unpackVelU16(buf.getU16()), // vz
       unpackVelU16(buf.getU16()), // vy
+      buf.getU8(), // v3: tree-fruit flags
+      buf.getU8(), // v3: age (deciseconds, clamped 0..255)
     ]);
   }
   const removed: number[] = [];
