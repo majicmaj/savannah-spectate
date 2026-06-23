@@ -1,0 +1,23 @@
+# Fires the wire-version drift check every ~5 min. Paired with
+# savannah-spectate-healthcheck.service. Install on the box at
+# /etc/systemd/system/savannah-spectate-healthcheck.timer, then:
+#
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now savannah-spectate-healthcheck.timer
+#   systemctl list-timers savannah-spectate-healthcheck.timer
+#
+# The check is a no-op (and silent) when versions match or the gateway is down,
+# and a standing drift pages only once per 6h (cooldown in the script), so a
+# tight cadence is safe and detects an outage within minutes.
+
+[Unit]
+Description=Poll for spectate-viewer wire-version drift and page on mismatch
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Unit=savannah-spectate-healthcheck.service
+
+[Install]
+WantedBy=timers.target

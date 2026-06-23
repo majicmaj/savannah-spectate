@@ -1,0 +1,32 @@
+# Oneshot unit fired by savannah-spectate-healthcheck.timer. Connects to the
+# box-local spectator gateway, reads the live wire SNAPSHOT_VERSION, and pages
+# Discord (ops webhook) if the DEPLOYED viewer's version has drifted behind the
+# game's — the silent "trees load, no animals" outage. See spectate-healthcheck.mjs.
+#
+# EnvironmentFile is the SAME ops env the game's alert sidecar uses, for
+# DISCORD_ALERT_WEBHOOK_URL. The viewer is unprivileged: no sudo, no restart.
+#
+# Install on the box (one-time) — tools/install-autodeploy.sh does this for you:
+#   sudo cp tools/savannah-spectate-healthcheck.service /etc/systemd/system/
+#   sudo cp tools/savannah-spectate-healthcheck.timer   /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now savannah-spectate-healthcheck.timer
+
+[Unit]
+Description=Alert if the spectate viewer's wire version has drifted behind the game
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=majd
+Group=majd
+WorkingDirectory=/home/majd/savannah-spectate
+EnvironmentFile=/etc/savanah/discord.env
+ExecStart=/usr/bin/node /home/majd/savannah-spectate/tools/spectate-healthcheck.mjs
+# Exit 2 = drift detected (handled, alert sent) — don't let systemd flag it failed.
+SuccessExitStatus=0 2
+TimeoutStartSec=60
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=savannah-spectate-healthcheck

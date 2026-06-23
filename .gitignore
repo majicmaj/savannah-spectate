@@ -9,3 +9,6 @@ public/assets
 public/models
 public/sounds
 public/textures
+
+# spectate healthcheck cooldown state (runtime, per-box)
+tools/.healthcheck-state.json
