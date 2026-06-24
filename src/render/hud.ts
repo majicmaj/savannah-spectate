@@ -9,6 +9,33 @@ interface Bar { key: string; label: string; color: string; fill: HTMLDivElement;
 
 const FRAME = "rgb(248,185,92)";
 const BG = "rgba(26,20,15,0.72)";
+
+// Responsive rules — inline styles can't host media queries, so inject once.
+// Narrow screens: wrap the bar row, shrink bars, and lift the whole HUD above
+// the bottom-right ‹ / › nav buttons (bottom:14px, 38px tall → clear of 60px).
+const HUD_STYLE_ID = "spec-hud-style";
+function injectHudStyle(): void {
+  if (document.getElementById(HUD_STYLE_ID)) return;
+  const st = document.createElement("style");
+  st.id = HUD_STYLE_ID;
+  // !important: root/row/track carry inline styles, which otherwise outrank
+  // stylesheet rules. The overrides below must win over those inline values.
+  st.textContent =
+    // A wrapping flex container needs a DEFINITE width to know where to break;
+    // under the parent's align-items:center it has none, so set one explicitly.
+    // 640px ≥ the 6-bar row (616px) → desktop stays a single centered row.
+    "#spec-hud .spec-bar-row{flex-wrap:wrap;justify-content:center;width:min(640px,calc(100vw - 16px));}" +
+    "@media (max-width:720px){" +
+    "  #spec-hud{bottom:60px !important;}" +
+    "  #spec-hud .spec-bar-row{gap:5px 6px !important;}" +
+    "  #spec-hud .spec-bar-track{width:84px !important;}" +
+    "}" +
+    "@media (max-width:420px){" +
+    "  #spec-hud .spec-bar-track{width:calc((100vw - 52px)/3) !important;max-width:96px;min-width:64px;}" +
+    "  #spec-hud .spec-bar-lab{font-size:9px !important;}" +
+    "}";
+  document.head.appendChild(st);
+}
 const BARS: { key: string; label: string; color: string }[] = [
   { key: "health", label: "Health", color: "rgb(128,46,41)" },
   { key: "stamina", label: "Stamina", color: "rgb(158,128,51)" },
@@ -25,7 +52,9 @@ export class Hud {
   private bars: Bar[] = [];
 
   constructor() {
+    injectHudStyle();
     const root = document.createElement("div");
+    root.id = "spec-hud";
     root.style.cssText =
       "position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:9;" +
       "display:flex;flex-direction:column;align-items:center;gap:3px;pointer-events:none;" +
@@ -40,14 +69,17 @@ export class Hud {
     this.subtitle = subtitle;
 
     const rowEl = document.createElement("div");
+    rowEl.className = "spec-bar-row";
     rowEl.style.cssText = "display:flex;gap:8px;";
     for (const b of BARS) {
       const cell = document.createElement("div");
       cell.style.cssText = "display:flex;flex-direction:column;align-items:center;gap:2px;";
       const lab = document.createElement("div");
+      lab.className = "spec-bar-lab";
       lab.textContent = b.label;
       lab.style.cssText = "font-size:10px;opacity:0.85;";
       const track = document.createElement("div");
+      track.className = "spec-bar-track";
       track.style.cssText =
         `position:relative;width:96px;height:14px;background:${BG};border:1px solid ${FRAME};border-radius:2px;overflow:hidden;`;
       const fill = document.createElement("div");
